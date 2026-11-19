@@ -134,6 +134,7 @@ describe("VantexCapital", function () {
     await expect(vantex.connect(alice).claimRoi()).to.emit(vantex, "ReferralPaid");
     // Alice receives $72 total ($36 profit + $36 capital); sponsor gets 10% of profit = $3.60.
     expect(await token.balanceOf(owner.address)).to.be.closeTo(before + usdt(3.6), 100n);
+    expect(await vantex.referralEarnings(owner.address)).to.be.closeTo(usdt(3.6), 100n);
   });
 
   it("stores the exact 15 ROI-on-ROI percentages", async function () {

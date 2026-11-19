@@ -57,6 +57,7 @@ contract VantexCapital is Ownable, ReentrancyGuard {
     mapping(address => Member) public members;
     mapping(address => Position[]) private _positions;
     mapping(address => mapping(Leg => address)) public directLeg;
+    mapping(address => uint256) public referralEarnings;
 
     uint16[15] public referralRateBps = [1000, 500, 400, 300, 300, 300, 200, 200, 100, 100, 200, 200, 300, 400, 500];
     uint16[4] public levelBusinessUsd = [100, 300, 800, 1500];
@@ -301,6 +302,7 @@ contract VantexCapital is Ownable, ReentrancyGuard {
                 uint256 reward = roi * referralRateBps[level - 1] / BPS;
                 if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
                     paymentToken.safeTransfer(upline, reward);
+                    referralEarnings[upline] += reward;
                     totalRewardsPaid += reward;
                     emit ReferralPaid(upline, source, level, reward);
                 }

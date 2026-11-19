@@ -9,6 +9,9 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_VANTEX_ADDRESS || "";
 const TOKEN_ADDRESS = import.meta.env.VITE_TOKEN_ADDRESS || "";
 const TOKEN_DECIMALS = Number(import.meta.env.VITE_TOKEN_DECIMALS || 6);
 const ZERO = "0x0000000000000000000000000000000000000000";
+const REFERRAL_PARAMS = new URLSearchParams(window.location.search);
+const LINK_REFERRER = ethers.isAddress(REFERRAL_PARAMS.get("ref") || "") ? REFERRAL_PARAMS.get("ref") : "";
+const LINK_LEG = REFERRAL_PARAMS.get("leg") === "1" ? 1 : 0;
 const BSC_TESTNET_CHAIN_ID = "0x61";
 const BSC_TESTNET = {
   chainId: BSC_TESTNET_CHAIN_ID,
@@ -28,6 +31,7 @@ const VANTEX_ABI = [
   "function members(address) view returns (address referrer,uint128 personalBusiness,uint128 legABusiness,uint128 legBBusiness,uint40 salaryStartedAt,uint8 salaryRank,uint8 salaryClaims,uint8 split,bool registered)",
   "function owner() view returns (address)",
   "function directLeg(address,uint8) view returns (address)",
+  "function referralEarnings(address) view returns (uint256)",
   "function pendingRoi(address) view returns (uint256)",
   "function balancedBusiness(address) view returns (uint256)",
   "function qualifiedLevel(address) view returns (uint8)",
@@ -82,10 +86,10 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState("100");
   const [selectedPlan, setSelectedPlan] = useState(0);
-  const [referrer, setReferrer] = useState("");
-  const [leg, setLeg] = useState(0);
+  const [referrer, setReferrer] = useState(LINK_REFERRER);
+  const [leg, setLeg] = useState(LINK_LEG);
   const [split, setSplit] = useState(0);
-  const [data, setData] = useState({ balance: "0", pending: "0", business: "0", level: 0, member: null, positions: [] });
+  const [data, setData] = useState({ balance: "0", pending: "0", business: "0", referralEarnings: "0", level: 0, member: null, positions: [], directA: ZERO, directB: ZERO });
   const isConfigured = ethers.isAddress(CONTRACT_ADDRESS) && ethers.isAddress(TOKEN_ADDRESS);
 
   const signerContract = async () => new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, await provider.getSigner());
@@ -106,18 +110,39 @@ function App() {
     throw new Error("No open sponsor placement is currently available.");
   };
 
+  const selectRegistrationPlacement = async (reader) => {
+    if (LINK_REFERRER) {
+      const [sponsor, legA, legB] = await Promise.all([
+        reader.members(LINK_REFERRER), reader.directLeg(LINK_REFERRER, 0), reader.directLeg(LINK_REFERRER, 1)
+      ]);
+      if (!sponsor.registered) throw new Error("This referral link does not belong to a registered sponsor.");
+      const preferredOccupant = LINK_LEG === 0 ? legA : legB;
+      const alternateOccupant = LINK_LEG === 0 ? legB : legA;
+      if (preferredOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG };
+      if (alternateOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG === 0 ? 1 : 0 };
+      throw new Error("This sponsor already has members in both direct A/B slots. Ask for another referral link.");
+    }
+    if (ethers.isAddress(referrer) && referrer !== ZERO) {
+      const [sponsor, occupant] = await Promise.all([reader.members(referrer), reader.directLeg(referrer, leg)]);
+      if (sponsor.registered && occupant === ZERO) return { referrer, leg };
+    }
+    return findOpenPlacement(reader);
+  };
+
   const load = async (activeProvider = provider, activeAccount = account) => {
     if (!activeProvider || !activeAccount || !isConfigured) return;
     try {
       const reader = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, activeProvider);
       const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, activeProvider);
-      const [member, pending, business, level, positions, balance] = await Promise.all([
+      const referralTotalPromise = reader.referralEarnings(activeAccount).catch(() => 0n);
+      const [member, pending, business, referralTotal, level, positions, balance, directA, directB] = await Promise.all([
         reader.members(activeAccount), reader.pendingRoi(activeAccount), reader.balancedBusiness(activeAccount),
-        reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount), token.balanceOf(activeAccount)
+        referralTotalPromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount),
+        token.balanceOf(activeAccount), reader.directLeg(activeAccount, 0), reader.directLeg(activeAccount, 1)
       ]);
-      setData({ member, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), level: Number(level), positions, balance: ethers.formatUnits(balance, TOKEN_DECIMALS) });
+      setData({ member, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), level: Number(level), positions, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
       if (!member.registered) {
-        const placement = await findOpenPlacement(reader);
+        const placement = await selectRegistrationPlacement(reader);
         setReferrer(placement.referrer);
         setLeg(placement.leg);
       }
@@ -178,12 +203,7 @@ function App() {
         const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, await provider.getSigner());
         tx = await token.mint(account, ethers.parseUnits("10000", TOKEN_DECIMALS));
       } else if (kind === "register") {
-        let placement = { referrer, leg };
-        if (!ethers.isAddress(referrer) || referrer === ZERO) placement = await findOpenPlacement(contract);
-        else {
-          const [sponsor, occupant] = await Promise.all([contract.members(referrer), contract.directLeg(referrer, leg)]);
-          if (!sponsor.registered || occupant !== ZERO) placement = await findOpenPlacement(contract);
-        }
+        const placement = await selectRegistrationPlacement(contract);
         setReferrer(placement.referrer);
         setLeg(placement.leg);
         tx = await contract.register(placement.referrer, placement.leg, split);
@@ -204,11 +224,7 @@ function App() {
         } catch {
           let placement = { referrer, leg };
           if (!currentMember.registered) {
-            if (!ethers.isAddress(referrer) || referrer === ZERO) placement = await findOpenPlacement(contract);
-            else {
-              const [sponsor, occupant] = await Promise.all([contract.members(referrer), contract.directLeg(referrer, leg)]);
-              if (!sponsor.registered || occupant !== ZERO) placement = await findOpenPlacement(contract);
-            }
+            placement = await selectRegistrationPlacement(contract);
             setNotice("Current testnet contracts require registration confirmation…");
             const registration = await contract.register(placement.referrer, placement.leg, split);
             await registration.wait();
@@ -244,17 +260,21 @@ function App() {
         const { v, r, s } = ethers.Signature.from(signature);
         if (currentMember.registered) tx = await contract.investWithPermit(value, selectedPlan, deadline, v, r, s);
         else {
-          let placement = { referrer, leg };
-          if (!ethers.isAddress(referrer) || referrer === ZERO) placement = await findOpenPlacement(contract);
-          else {
-            const [sponsor, occupant] = await Promise.all([contract.members(referrer), contract.directLeg(referrer, leg)]);
-            if (!sponsor.registered || occupant !== ZERO) placement = await findOpenPlacement(contract);
-          }
+          const placement = await selectRegistrationPlacement(contract);
           setReferrer(placement.referrer);
           setLeg(placement.leg);
           tx = await contract.registerAndInvestWithPermit(placement.referrer, placement.leg, split, value, selectedPlan, deadline, v, r, s);
         }
-      } else if (kind === "compoundRoi") tx = await contract.compoundRoi(selectedPlan);
+      } else if (kind === "compoundRoi") {
+        const pendingAmount = Number(data.pending);
+        const compoundPlan = plans.find(plan => pendingAmount >= plan.min && pendingAmount <= plan.max);
+        if (!compoundPlan) {
+          throw new Error(pendingAmount < 1
+            ? "At least $1 of claimable ROI is required to compound."
+            : "Claimable ROI above $2,500 cannot be compounded into a single position. Claim it to your wallet instead.");
+        }
+        tx = await contract.compoundRoi(compoundPlan.index);
+      }
       else tx = await contract[kind]();
       setNotice("Transaction submitted. Waiting for confirmation…");
       await tx.wait(); setNotice("Transaction confirmed on-chain."); await load();
@@ -282,13 +302,25 @@ function App() {
     return Number(amount || 0) * plan.rateValue / 100 * days;
   }, [amount, selectedPlan]);
 
+  const compoundPlan = plans.find(plan => Number(data.pending) >= plan.min && Number(data.pending) <= plan.max) || null;
+
   const openDashboard = () => { window.location.hash = "/dashboard"; setRoute("dashboard"); window.scrollTo(0, 0); };
   const openHome = () => { window.location.hash = ""; setRoute("home"); window.scrollTo(0, 0); };
+  const availableReferralLeg = data.directA === ZERO ? 0 : data.directB === ZERO ? 1 : null;
+  const referralLink = account && data.member?.registered && availableReferralLeg !== null
+    ? `${window.location.origin}${window.location.pathname}?ref=${account}&leg=${availableReferralLeg}&action=register#/dashboard`
+    : "";
+  const copyReferralLink = async () => {
+    if (!referralLink) return setNotice("Both direct referral slots are already filled.");
+    await navigator.clipboard.writeText(referralLink);
+    setNotice(`Referral link copied for Organization ${availableReferralLeg === 0 ? "A" : "B"}.`);
+  };
 
   if (route === "dashboard") return <Dashboard {...{
     account, connect, data, notice, busy, isConfigured, plans, selectedPlan,
     setSelectedPlan: selectPlan, amount, setAmount: changeAmount, projected, transact, referrer,
-    setReferrer, leg, setLeg, split, setSplit
+    setReferrer, leg, setLeg, split, setSplit, referralLink, copyReferralLink, linkReferrer: LINK_REFERRER,
+    compoundPlan
   }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>;
 
   return <div className="app">
@@ -350,11 +382,11 @@ function App() {
           <div className="dashboard-head"><div><div className="eyebrow">Investor console</div><h2>Your capital cockpit.</h2></div><button className="launch-dashboard" onClick={openDashboard}><LayoutDashboard size={17}/> Launch full dashboard <ArrowUpRight size={16}/></button></div>
           {!isConfigured && <div className="config-note"><Zap size={18}/><span><b>Preview mode.</b> Set the two contract address environment variables after deployment to enable live reads and transactions.</span></div>}
           {notice && <div className="notice">{notice}</div>}
-          {account && data.member && !data.member.registered && <div className="config-note"><ShieldCheck size={18}/><span><b>One-step activation.</b> Creating your first position registers the wallet and invests in one transaction.</span></div>}
+          {account && data.member && !data.member.registered && <div className="config-note registration-note"><ShieldCheck size={18}/><span><b>Registration available.</b> Activate your wallet now{LINK_REFERRER ? ` under sponsor ${short(LINK_REFERRER)}` : ""}, or register automatically with your first investment.</span><button disabled={busy} onClick={() => transact("register")}>{busy ? "Registering…" : "Register now"}</button></div>}
           <div className="dashboard-grid">
             <div className="stats-panel">
               <div className="stat"><span><CircleDollarSign/>Wallet balance</span><strong>${fmt(data.balance)}</strong><small>USDT available</small></div>
-              <div className="stat accent"><span><BarChart3/>Claimable ROI</span><strong>${fmt(data.pending)}</strong><div className="stat-actions"><button disabled={busy || !account} onClick={() => transact("claimRoi")}>Claim rewards</button><button disabled={busy || !account || Number(data.pending) < 1} onClick={() => transact("compoundRoi")}>Compound into {plans[selectedPlan].name}</button></div></div>
+              <div className="stat accent"><span><BarChart3/>Claimable ROI</span><strong>${fmt(data.pending)}</strong><div className="stat-actions"><button disabled={busy || !account} onClick={() => transact("claimRoi")}>Claim rewards</button><button disabled={busy || !account || !compoundPlan} onClick={() => transact("compoundRoi")}>{compoundPlan ? `Compound into ${compoundPlan.name}` : "Compound unavailable"}</button></div></div>
               <div className="stat"><span><Users/>Balanced business</span><strong>${fmt(data.business)}</strong><small>Qualified through level {data.level}</small></div>
               <div className="stat"><span><Crown/>Salary rank</span><strong>{data.member ? Number(data.member.salaryRank) : 0}<i>/5</i></strong><button disabled={busy || !account} onClick={() => transact("claimSalary")}>Claim salary</button></div>
             </div>

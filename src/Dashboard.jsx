@@ -3,9 +3,9 @@ import { ethers } from "ethers";
 import "./dashboard.css";
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowUpRight, BadgeDollarSign,
-  BarChart3, BriefcaseBusiness, ChevronDown, CircleDollarSign, Crown,
+  BarChart3, BriefcaseBusiness, ChevronDown, CircleDollarSign, Copy, Crown, Link2,
   LayoutDashboard, Network, Plus, RefreshCw, ShieldCheck, TrendingUp,
-  Users, Wallet
+  UserPlus, Users, Wallet
 } from "lucide-react";
 
 const planNames = ["Package 1", "Package 2", "Package 3", "Package 4"];
@@ -18,7 +18,7 @@ const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-
 export default function Dashboard({
   account, connect, data, notice, busy, isConfigured, plans, selectedPlan,
   setSelectedPlan, amount, setAmount, projected, transact, tokenDecimals,
-  referrer, setReferrer, leg, setLeg, split, setSplit, onHome
+  split, setSplit, referralLink, copyReferralLink, linkReferrer, compoundPlan, onHome
 }) {
   const [section, setSection] = useState("overview");
   const positions = useMemo(() => data.positions.map((position, index) => {
@@ -64,11 +64,12 @@ export default function Dashboard({
       {!isConfigured && <div className="portal-alert"><Activity size={18}/><span><b>Preview mode:</b> configure the contract addresses to enable live transactions.</span></div>}
       {notice && <div className="portal-alert notice-alert">{notice}</div>}
 
-      {account && member && !member.registered && <div className="portal-alert"><ShieldCheck size={18}/><span><b>One-step activation:</b> your first position will register your wallet and invest in one transaction.</span></div>}
+      {linkReferrer && !account && <div className="portal-alert registration-alert"><UserPlus size={18}/><span><b>Referral invitation:</b> connect your wallet to register under sponsor {short(linkReferrer)}.</span><button disabled={busy} onClick={connect}>Connect to register</button></div>}
+      {account && member && !member.registered && <div className="portal-alert registration-alert"><ShieldCheck size={18}/><span><b>Registration available:</b> activate your wallet now{linkReferrer ? ` under sponsor ${short(linkReferrer)}` : ""}, or register automatically with your first position.</span><button disabled={busy} onClick={() => transact("register")}>{busy ? "Registering…" : "Register now"}</button></div>}
 
       <section className="balance-hero">
         <div><span className="metric-label"><CircleDollarSign size={15}/> TOTAL POSITION VALUE</span><strong>${money(totalPrincipal + Number(data.pending))}</strong><p><b>${money(totalPrincipal)}</b> invested principal <i/> <em>${money(data.pending)} available</em></p></div>
-        <div className="balance-actions"><button className="claim" disabled={busy || !account || Number(data.pending) <= 0} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Claim ${money(data.pending)}</button><button disabled={busy || !account || Number(data.pending) < 1} onClick={() => transact("compoundRoi")}><TrendingUp size={17}/> Compound ROI</button></div>
+        <div className="balance-actions"><button className="claim" disabled={busy || !account || Number(data.pending) <= 0} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Claim ${money(data.pending)}</button><button disabled={busy || !account || !compoundPlan} onClick={() => transact("compoundRoi")}><TrendingUp size={17}/>{compoundPlan ? `Compound to ${compoundPlan.name}` : "Compound unavailable"}</button></div>
         <div className="balance-art"><i/><i/><i/><i/><i/><i/></div>
       </section>
 
@@ -109,6 +110,15 @@ export default function Dashboard({
           <div className="business-numbers"><div><i className="a"/><span>Organization A</span><b>${money(aBusiness, 0)}</b><small>{money(aPercent, 0)}% of volume</small></div><div><i className="b"/><span>Organization B</span><b>${money(bBusiness, 0)}</b><small>{money(bPercent, 0)}% of volume</small></div></div>
           <div className="business-bar"><i style={{width: `${aPercent}%`}}/><b style={{width: `${bPercent}%`}}/></div>
           <div className="qualification"><span>Current qualification</span><b>Referral level {data.level} of 15</b></div>
+          <div className="referral-tools">
+            <div className="referral-title"><div><Link2 size={15}/><span>YOUR REFERRAL LINK</span></div><strong>${money(data.referralEarnings)} earned</strong></div>
+            <div className="referral-link-row"><input readOnly value={referralLink || (account ? "Both direct referral slots are filled" : "Connect wallet to generate link")}/><button disabled={!referralLink} onClick={copyReferralLink}><Copy size={14}/> Copy link</button></div>
+            <div className="referral-legs">
+              <div><UserPlus size={14}/><span>Organization A</span><b>{data.directA === ethers.ZeroAddress ? "Open" : short(data.directA)}</b></div>
+              <div><UserPlus size={14}/><span>Organization B</span><b>{data.directB === ethers.ZeroAddress ? "Open" : short(data.directB)}</b></div>
+            </div>
+            {member?.registered && <small>Your sponsor: {member.referrer === ethers.ZeroAddress ? "Root account" : short(member.referrer)} · Referral rewards unlock with balanced business qualification.</small>}
+          </div>
         </section>
         <section className="portal-card salary-card">
           <div className="salary-icon"><Crown/></div><div><span>SALARY PROGRAM</span><h2>Rank {member ? Number(member.salaryRank) : 0}</h2><p>Six reward cycles unlock every 15 days after reaching a balanced-business milestone.</p></div>
