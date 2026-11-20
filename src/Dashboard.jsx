@@ -112,7 +112,7 @@ export default function Dashboard({
           <div className="qualification"><span>Current qualification</span><b>Referral level {data.level} of 15</b></div>
           <div className="referral-tools">
             <div className="referral-title"><div><Link2 size={15}/><span>YOUR REFERRAL LINK</span></div><strong>${money(data.referralEarnings)} earned</strong></div>
-            <div className="referral-link-row"><input readOnly value={referralLink || (account ? "Both direct referral slots are filled" : "Connect wallet to generate link")}/><button disabled={!referralLink} onClick={copyReferralLink}><Copy size={14}/> Copy link</button></div>
+            <div className="referral-link-row"><input readOnly value={referralLink || (account ? "Register wallet to generate link" : "Connect wallet to generate link")}/><button disabled={!referralLink} onClick={copyReferralLink}><Copy size={14}/> Copy link</button></div>
             <div className="referral-legs">
               <div><UserPlus size={14}/><span>Organization A</span><b>{data.directA === ethers.ZeroAddress ? "Open" : short(data.directA)}</b></div>
               <div><UserPlus size={14}/><span>Organization B</span><b>{data.directB === ethers.ZeroAddress ? "Open" : short(data.directB)}</b></div>

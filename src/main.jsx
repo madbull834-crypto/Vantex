@@ -93,8 +93,8 @@ function App() {
   const isConfigured = ethers.isAddress(CONTRACT_ADDRESS) && ethers.isAddress(TOKEN_ADDRESS);
 
   const signerContract = async () => new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, await provider.getSigner());
-  const findOpenPlacement = async (reader) => {
-    const root = await reader.owner();
+  const findOpenPlacement = async (reader, startingSponsor = "") => {
+    const root = startingSponsor || await reader.owner();
     const queue = [root];
     const visited = new Set();
     while (queue.length && visited.size < 512) {
@@ -120,7 +120,7 @@ function App() {
       const alternateOccupant = LINK_LEG === 0 ? legB : legA;
       if (preferredOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG };
       if (alternateOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG === 0 ? 1 : 0 };
-      throw new Error("This sponsor already has members in both direct A/B slots. Ask for another referral link.");
+      return findOpenPlacement(reader, LINK_REFERRER);
     }
     if (ethers.isAddress(referrer) && referrer !== ZERO) {
       const [sponsor, occupant] = await Promise.all([reader.members(referrer), reader.directLeg(referrer, leg)]);
@@ -306,14 +306,17 @@ function App() {
 
   const openDashboard = () => { window.location.hash = "/dashboard"; setRoute("dashboard"); window.scrollTo(0, 0); };
   const openHome = () => { window.location.hash = ""; setRoute("home"); window.scrollTo(0, 0); };
-  const availableReferralLeg = data.directA === ZERO ? 0 : data.directB === ZERO ? 1 : null;
-  const referralLink = account && data.member?.registered && availableReferralLeg !== null
+  const hasOpenDirectLeg = data.directA === ZERO || data.directB === ZERO;
+  const availableReferralLeg = data.directA === ZERO ? 0 : data.directB === ZERO ? 1 : 0;
+  const referralLink = account && data.member?.registered
     ? `${window.location.origin}${window.location.pathname}?ref=${account}&leg=${availableReferralLeg}&action=register#/dashboard`
     : "";
   const copyReferralLink = async () => {
-    if (!referralLink) return setNotice("Both direct referral slots are already filled.");
+    if (!referralLink) return setNotice("Register this wallet before generating a referral link.");
     await navigator.clipboard.writeText(referralLink);
-    setNotice(`Referral link copied for Organization ${availableReferralLeg === 0 ? "A" : "B"}.`);
+    setNotice(hasOpenDirectLeg
+      ? `Referral link copied for Organization ${availableReferralLeg === 0 ? "A" : "B"}.`
+      : "Referral link copied. New members will use the next open position in your organization.");
   };
 
   if (route === "dashboard") return <Dashboard {...{
