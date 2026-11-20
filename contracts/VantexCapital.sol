@@ -4,18 +4,20 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 /**
  * @title VantexCapital
  * @notice Stablecoin investment and referral accounting based on the supplied Vantex plan.
  * @dev Rates use basis points (100 = 1%). Each package releases equal daily profit and capital,
- *      producing the brochure totals of 1.00%–1.30% per day. Positions are capped at 200 days
- *      because the source brochure does not state a duration. This is a pooled-reward contract:
+ *      producing the brochure totals of 1.00%–1.30% per earning day. ROI accrues Monday through
+ *      Friday in UTC, and positions are capped at 200 earning days (40 weeks). This is a pooled-reward contract:
  *      the owner must keep it solvent and no return is guaranteed by the code.
  */
-contract VantexCapital is Ownable, ReentrancyGuard {
+contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     uint16 private constant BPS = 10_000;
@@ -49,9 +51,9 @@ contract VantexCapital is Ownable, ReentrancyGuard {
         bool registered;
     }
 
-    IERC20 public immutable paymentToken;
-    uint8 public immutable tokenDecimals;
-    uint256 public immutable unit;
+    IERC20 public paymentToken;
+    uint8 public tokenDecimals;
+    uint256 public unit;
     bool public paused;
 
     mapping(address => Member) public members;
@@ -59,10 +61,10 @@ contract VantexCapital is Ownable, ReentrancyGuard {
     mapping(address => mapping(Leg => address)) public directLeg;
     mapping(address => uint256) public referralEarnings;
 
-    uint16[15] public referralRateBps = [1000, 500, 400, 300, 300, 300, 200, 200, 100, 100, 200, 200, 300, 400, 500];
-    uint16[4] public levelBusinessUsd = [100, 300, 800, 1500];
-    uint32[5] public salaryBusinessUsd = [1000, 2000, 5000, 10000, 20000];
-    uint16[5] public salaryAmountUsd = [25, 50, 125, 250, 500];
+    uint16[15] public referralRateBps;
+    uint16[4] public levelBusinessUsd;
+    uint32[5] public salaryBusinessUsd;
+    uint16[5] public salaryAmountUsd;
 
     uint256 public totalDeposited;
     uint256 public totalCompounded;
@@ -88,11 +90,24 @@ contract VantexCapital is Ownable, ReentrancyGuard {
     event RewardsFunded(address indexed funder, uint256 amount);
     event PauseSet(bool paused);
 
-    constructor(IERC20 token_, uint8 tokenDecimals_, address owner_) Ownable(owner_) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(IERC20 token_, uint8 tokenDecimals_, address owner_) public initializer {
         if (address(token_) == address(0) || owner_ == address(0) || tokenDecimals_ > 18) revert InvalidAmount();
+        __Ownable_init(owner_);
+        __ReentrancyGuard_init();
+        __UUPSUpgradeable_init();
+
         paymentToken = token_;
         tokenDecimals = tokenDecimals_;
         unit = 10 ** tokenDecimals_;
+        referralRateBps = [uint16(1000), 500, 400, 300, 300, 300, 200, 200, 100, 100, 200, 200, 300, 400, 500];
+        levelBusinessUsd = [uint16(100), 300, 800, 1500];
+        salaryBusinessUsd = [uint32(1000), 2000, 5000, 10000, 20000];
+        salaryAmountUsd = [uint16(25), 50, 125, 250, 500];
         members[owner_].registered = true;
     }
 
@@ -216,7 +231,8 @@ contract VantexCapital is Ownable, ReentrancyGuard {
         else if (plan == Plan.Package3 && amount >= 501 * unit && amount <= 1_000 * unit) rate = 120;
         else if (plan == Plan.Package4 && amount >= 1_001 * unit && amount <= 2_500 * unit) rate = 130;
         else revert InvalidAmount();
-        duration = 200 days;
+        // Forty complete weeks contain exactly 200 Monday-Friday earning days.
+        duration = 280 days;
     }
 
     function pendingRoi(address account) public view returns (uint256 amount) {
@@ -280,7 +296,27 @@ contract VantexCapital is Ownable, ReentrancyGuard {
     function _earned(Position storage position) private view returns (uint256) {
         uint256 until = block.timestamp < position.endsAt ? block.timestamp : position.endsAt;
         if (until <= position.startedAt) return 0;
-        return uint256(position.principal) * position.dailyRateBps * (until - position.startedAt) / DAY / BPS;
+        uint256 earningSeconds = _businessSecondsUntil(until) - _businessSecondsUntil(position.startedAt);
+        return uint256(position.principal) * position.dailyRateBps * earningSeconds / DAY / BPS;
+    }
+
+    /**
+     * @dev Returns cumulative Monday-Friday seconds since the Unix epoch. Unix day zero was a
+     *      Thursday, so remainder days 0, 1, 4, 5 and 6 are earning days; 2 and 3 are weekends.
+     */
+    function _businessSecondsUntil(uint256 timestamp) private pure returns (uint256) {
+        uint256 elapsedDays = timestamp / DAY;
+        uint256 completeWeeks = elapsedDays / 7;
+        uint256 remainderDays = elapsedDays % 7;
+        uint256 weekdaysBeforeToday;
+
+        if (remainderDays <= 2) weekdaysBeforeToday = remainderDays;
+        else if (remainderDays <= 4) weekdaysBeforeToday = 2;
+        else weekdaysBeforeToday = remainderDays - 2;
+
+        uint256 earningSeconds = (completeWeeks * 5 + weekdaysBeforeToday) * DAY;
+        if (remainderDays < 2 || remainderDays > 3) earningSeconds += timestamp % DAY;
+        return earningSeconds;
     }
 
     function _propagateBusiness(address investor, uint256 amount) private {
@@ -337,4 +373,8 @@ contract VantexCapital is Ownable, ReentrancyGuard {
     function _requireBalance(uint256 amount) private view {
         if (paymentToken.balanceOf(address(this)) < amount) revert Insolvent();
     }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    uint256[45] private __gap;
 }

@@ -1,4 +1,5 @@
 require("@nomicfoundation/hardhat-toolbox");
+require("@openzeppelin/hardhat-upgrades");
 require("dotenv").config({ quiet: true });
 const { subtask } = require("hardhat/config");
 const { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } = require("hardhat/builtin-tasks/task-names");

@@ -14,6 +14,14 @@ const money = (value, digits = 2) => Number(value || 0).toLocaleString("en-US", 
   maximumFractionDigits: digits
 });
 const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet";
+const businessSecondsUntil = (timestamp) => {
+  const elapsedDays = Math.floor(timestamp / 86_400);
+  const completeWeeks = Math.floor(elapsedDays / 7);
+  const remainderDays = elapsedDays % 7;
+  const weekdaysBeforeToday = remainderDays <= 2 ? remainderDays : remainderDays <= 4 ? 2 : remainderDays - 2;
+  const todaySeconds = remainderDays < 2 || remainderDays > 3 ? timestamp % 86_400 : 0;
+  return (completeWeeks * 5 + weekdaysBeforeToday) * 86_400 + todaySeconds;
+};
 
 export default function Dashboard({
   account, connect, data, notice, busy, isConfigured, plans, selectedPlan,
@@ -24,9 +32,10 @@ export default function Dashboard({
   const positions = useMemo(() => data.positions.map((position, index) => {
     const principal = Number(ethers.formatUnits(position.principal, tokenDecimals));
     const claimed = Number(ethers.formatUnits(position.claimed, tokenDecimals));
-    const endsAt = Number(position.endsAt) * 1000;
-    const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 86_400_000));
-    return { index, principal, claimed, remaining, plan: planNames[Number(position.plan)], rate: Number(position.dailyRateBps) / 100, active: remaining > 0 };
+    const endsAt = Number(position.endsAt);
+    const remainingSeconds = Math.max(0, businessSecondsUntil(endsAt) - businessSecondsUntil(Math.floor(Date.now() / 1000)));
+    const remaining = Math.ceil(remainingSeconds / 86_400);
+    return { index, principal, claimed, remaining, plan: planNames[Number(position.plan)], rate: Number(position.dailyRateBps) / 100, active: Number(position.endsAt) * 1000 > Date.now() };
   }), [data.positions, tokenDecimals]);
 
   const totalPrincipal = positions.reduce((sum, position) => sum + position.principal, 0);
@@ -87,7 +96,7 @@ export default function Dashboard({
             <div className="position-row header"><span>Package</span><span>Principal</span><span>Daily total</span><span>Time left</span><span>Status</span></div>
             {positions.length ? positions.slice(0, 5).map(position => <div className="position-row" key={position.index}>
               <span><i className={`plan-dot p${planNames.indexOf(position.plan)}`}/><b>{position.plan}</b><small>Position #{String(position.index + 1).padStart(2, "0")}</small></span>
-              <span><b>${money(position.principal)}</b></span><span><b>{position.rate.toFixed(2)}%</b></span><span><b>{position.remaining} days</b></span><span><em className={position.active ? "active" : "ended"}>{position.active ? "Active" : "Ended"}</em></span>
+              <span><b>${money(position.principal)}</b></span><span><b>{position.rate.toFixed(2)}%</b></span><span><b>{position.remaining} earning days</b></span><span><em className={position.active ? "active" : "ended"}>{position.active ? "Active" : "Ended"}</em></span>
             </div>) : <div className="empty-positions"><BriefcaseBusiness size={30}/><b>No positions yet</b><span>Select a plan to create your first on-chain position.</span></div>}
           </div>
           <div className="portfolio-foot"><span>Total claimed ROI</span><b>${money(totalClaimed)}</b></div>

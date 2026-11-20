@@ -1,14 +1,31 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, upgrades } = require("hardhat");
 const { time } = require("@nomicfoundation/hardhat-network-helpers");
 
 describe("VantexCapital", function () {
   const usdt = (value) => ethers.parseUnits(String(value), 6);
+  const DAY = 24 * 60 * 60;
+
+  async function setNextBlockOnWeekday(targetDay) {
+    const latest = Number(await time.latest());
+    const elapsedDays = Math.floor(latest / DAY);
+    const currentDay = (elapsedDays + 4) % 7; // Unix epoch day zero was Thursday.
+    const offset = (targetDay - currentDay + 7) % 7;
+    let target = (elapsedDays + offset) * DAY;
+    if (target <= latest) target += 7 * DAY;
+    await time.setNextBlockTimestamp(target);
+  }
 
   async function fixture() {
     const [owner, alice, bob, carol] = await ethers.getSigners();
     const token = await ethers.deployContract("MockUSDT");
-    const vantex = await ethers.deployContract("VantexCapital", [await token.getAddress(), 6, owner.address]);
+    const VantexCapital = await ethers.getContractFactory("VantexCapital");
+    const vantex = await upgrades.deployProxy(
+      VantexCapital,
+      [await token.getAddress(), 6, owner.address],
+      { initializer: "initialize", kind: "uups" }
+    );
+    await vantex.waitForDeployment();
     for (const signer of [owner, alice, bob, carol]) {
       await token.mint(signer.address, usdt(100_000));
       await token.connect(signer).approve(await vantex.getAddress(), ethers.MaxUint256);
@@ -23,6 +40,26 @@ describe("VantexCapital", function () {
       .to.emit(vantex, "Registered").withArgs(alice.address, owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
     await expect(vantex.connect(carol).register(owner.address, 0, 1)).to.be.revertedWithCustomError(vantex, "LegOccupied");
+  });
+
+  it("allows only the owner to upgrade while preserving registrations and positions", async function () {
+    const { owner, alice, vantex } = await fixture();
+    await vantex.connect(alice).register(owner.address, 0, 0);
+    await vantex.invest(usdt(100), 0);
+
+    const V2 = await ethers.getContractFactory("VantexCapitalV2");
+    const currentImplementation = await upgrades.erc1967.getImplementationAddress(await vantex.getAddress());
+    await expect(vantex.connect(alice).upgradeToAndCall(currentImplementation, "0x"))
+      .to.be.revertedWithCustomError(vantex, "OwnableUnauthorizedAccount")
+      .withArgs(alice.address);
+
+    const upgraded = await upgrades.upgradeProxy(await vantex.getAddress(), V2, { kind: "uups" });
+    await upgraded.waitForDeployment();
+    expect(await upgraded.getAddress()).to.equal(await vantex.getAddress());
+    expect(await upgraded.version()).to.equal(2);
+    expect((await upgraded.members(alice.address)).registered).to.equal(true);
+    expect(await upgraded.positionsOf(owner.address)).to.have.length(1);
+    expect(await upgraded.owner()).to.equal(owner.address);
   });
 
   it("registers, authorizes the token, and creates a position in one transaction", async function () {
@@ -68,7 +105,9 @@ describe("VantexCapital", function () {
 
   it("enforces all four brochure package ranges and rates", async function () {
     const { vantex } = await fixture();
-    expect((await vantex.planTerms(usdt(100), 0))[0]).to.equal(100);
+    const package1 = await vantex.planTerms(usdt(100), 0);
+    expect(package1[0]).to.equal(100);
+    expect(package1[1]).to.equal(280 * DAY);
     expect((await vantex.planTerms(usdt(101), 1))[0]).to.equal(110);
     expect((await vantex.planTerms(usdt(500), 1))[0]).to.equal(110);
     expect((await vantex.planTerms(usdt(501), 2))[0]).to.equal(120);
@@ -81,25 +120,41 @@ describe("VantexCapital", function () {
 
   it("accrues and claims package ROI", async function () {
     const { owner, token, vantex } = await fixture();
+    await setNextBlockOnWeekday(1); // Monday UTC
     await vantex.invest(usdt(1000), 2); // package 3: 0.60% daily
-    await time.increase(10 * 24 * 60 * 60);
+    await time.increase(14 * DAY); // Ten Monday-Friday earning days
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(120));
     const before = await token.balanceOf(owner.address);
     await expect(vantex.claimRoi()).to.emit(vantex, "RoiClaimed");
     expect(await token.balanceOf(owner.address)).to.be.closeTo(before + usdt(120), 1_000n);
   });
 
+  it("does not accrue ROI on Saturday or Sunday", async function () {
+    const { owner, vantex } = await fixture();
+    await setNextBlockOnWeekday(5); // Friday UTC
+    await vantex.invest(usdt(1000), 2);
+    await time.increase(DAY);
+    const fridayAccrual = await vantex.pendingRoi(owner.address);
+    expect(fridayAccrual).to.equal(usdt(12));
+    await time.increase(2 * DAY);
+    expect(await vantex.pendingRoi(owner.address)).to.equal(fridayAccrual);
+  });
+
   it("caps accrual at the plan duration", async function () {
     const { owner, vantex } = await fixture();
+    await setNextBlockOnWeekday(1);
     await vantex.invest(usdt(100), 0);
-    await time.increase(300 * 24 * 60 * 60);
+    await time.increase(400 * DAY);
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(200)); // 100 × 1% × 200
+    const [position] = await vantex.positionsOf(owner.address);
+    expect(position.endsAt - position.startedAt).to.equal(BigInt(280 * DAY));
   });
 
   it("compounds claimable ROI into a new selected-plan position", async function () {
     const { owner, vantex } = await fixture();
+    await setNextBlockOnWeekday(1);
     await vantex.invest(usdt(1000), 2);
-    await time.increase(10 * 24 * 60 * 60);
+    await time.increase(14 * DAY);
     await expect(vantex.compoundRoi(1)).to.emit(vantex, "RoiCompounded");
     const positions = await vantex.positionsOf(owner.address);
     expect(positions).to.have.length(2);
@@ -127,9 +182,10 @@ describe("VantexCapital", function () {
     const { owner, alice, bob, token, vantex } = await fixture();
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
+    await setNextBlockOnWeekday(1);
     await vantex.connect(alice).invest(usdt(600), 2);
     await vantex.connect(bob).invest(usdt(400), 1);
-    await time.increase(10 * 24 * 60 * 60);
+    await time.increase(14 * DAY);
     const before = await token.balanceOf(owner.address);
     await expect(vantex.connect(alice).claimRoi()).to.emit(vantex, "ReferralPaid");
     // Alice receives $72 total ($36 profit + $36 capital); sponsor gets 10% of profit = $3.60.

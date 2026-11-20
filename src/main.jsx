@@ -54,10 +54,10 @@ const TOKEN_ABI = [
 ];
 
 const plans = [
-  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, days: "200 day cap", color: "gold", index: 0, copy: "0.50% profit + 0.50% capital release = 1.00% total daily." },
-  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, days: "200 day cap", color: "blue", index: 1, copy: "0.55% profit + 0.55% capital release = 1.10% total daily." },
-  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, days: "200 day cap", color: "purple", index: 2, copy: "0.60% profit + 0.60% capital release = 1.20% total daily." },
-  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, days: "200 day cap", color: "green", index: 3, copy: "0.65% profit + 0.65% capital release = 1.30% total daily." }
+  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "0.50% profit + 0.50% capital release = 1.00% per Monday–Friday earning day." },
+  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, days: "200 earning days · Mon–Fri", color: "blue", index: 1, copy: "0.55% profit + 0.55% capital release = 1.10% per Monday–Friday earning day." },
+  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, days: "200 earning days · Mon–Fri", color: "purple", index: 2, copy: "0.60% profit + 0.60% capital release = 1.20% per Monday–Friday earning day." },
+  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, days: "200 earning days · Mon–Fri", color: "green", index: 3, copy: "0.65% profit + 0.65% capital release = 1.30% per Monday–Friday earning day." }
 ];
 
 const levels = [10, 5, 4, 3, 3, 3, 2, 2, 1, 1, 2, 2, 3, 4, 5];
@@ -298,8 +298,7 @@ function App() {
 
   const projected = useMemo(() => {
     const plan = plans[selectedPlan];
-    const days = Number(plan.days) || 200;
-    return Number(amount || 0) * plan.rateValue / 100 * days;
+    return Number(amount || 0) * plan.rateValue / 100 * 200;
   }, [amount, selectedPlan]);
 
   const compoundPlan = plans.find(plan => Number(data.pending) >= plan.min && Number(data.pending) <= plan.max) || null;
@@ -338,7 +337,7 @@ function App() {
         <div className="hero-copy">
           <div className="eyebrow"><Sparkles size={14}/> Stablecoin-powered · On-chain accounting</div>
           <h1>Build your capital.<br/><em>Grow your network.</em></h1>
-          <p>A transparent dashboard for the Vantex Capital plan—investment terms, daily accrual, referral rewards and business milestones in one place.</p>
+          <p>A transparent dashboard for the Vantex Capital plan—investment terms, Monday–Friday accrual, referral rewards and business milestones in one place.</p>
           <div className="hero-actions"><button className="primary" onClick={openDashboard}>Open dashboard <ArrowUpRight size={18}/></button><a className="text-link" href="#plans">Explore plans <ChevronRight size={18}/></a></div>
           <div className="trust-row"><span><ShieldCheck/>Auditable rules</span><span><Clock3/>Daily accrual</span><span><Network/>15 levels</span></div>
         </div>
@@ -349,7 +348,7 @@ function App() {
             <div className="chart"><i/><i/><i/><i/><i/><i/><i/></div>
             <div className="growth-foot"><span>Principal ${fmt(amount)}</span><b>+${fmt(projected)} accrual</b></div>
           </div>
-          <div className="float-card"><Crown/><span>PACKAGE 4 TOTAL<strong>1.30% daily</strong></span></div>
+          <div className="float-card"><Crown/><span>PACKAGE 4 TOTAL<strong>1.30% Mon–Fri</strong></span></div>
         </div>
       </section>
 
@@ -359,7 +358,7 @@ function App() {
         <div className="section-head"><div><div className="eyebrow">Investment packages</div><h2>Choose your pace.</h2></div><p>Four paths, one auditable accrual engine. All positions have a defined maximum term.</p></div>
         <div className="plan-grid">{plans.map((plan) => <article key={plan.name} className={`plan-card ${plan.color} ${selectedPlan === plan.index ? "active" : ""}`} onClick={() => selectPlan(plan.index)}>
           <div className="plan-top"><span>{plan.name}</span>{plan.index === 2 && <b>POPULAR</b>}</div>
-          <h3>{plan.rate}</h3><small>daily profit</small><div className="divider"/>
+          <h3>{plan.rate}</h3><small>profit per earning day</small><div className="divider"/>
           <strong>{plan.label}</strong>
           <p>{plan.days}. {plan.copy}</p><button>Select package <ArrowUpRight size={16}/></button>
         </article>)}</div>
