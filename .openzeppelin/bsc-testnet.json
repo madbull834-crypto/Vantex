@@ -440,6 +440,928 @@
           ]
         }
       }
+    },
+    "fa6062a26fbf5276a98f268e96ae5cce53909fab0404fe920d8f560c4ca3317e": {
+      "address": "0xa0c810cA4Ad3b22B392E8Fe549bcD827A395E51E",
+      "txHash": "0x1e39320f715c90bfdcee2a8cbc1362b66fef9d94f16a7fea23d78edd76c69e52",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "paymentToken",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC20)1308",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:55"
+          },
+          {
+            "label": "tokenDecimals",
+            "offset": 20,
+            "slot": "0",
+            "type": "t_uint8",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:56"
+          },
+          {
+            "label": "unit",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:57"
+          },
+          {
+            "label": "paused",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_bool",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:58"
+          },
+          {
+            "label": "members",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_struct(Member)2264_storage)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:60"
+          },
+          {
+            "label": "_positions",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_address,t_array(t_struct(Position)2244_storage)dyn_storage)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:61"
+          },
+          {
+            "label": "directLeg",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_address,t_mapping(t_enum(Leg)2224,t_address))",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:62"
+          },
+          {
+            "label": "referralEarnings",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:63"
+          },
+          {
+            "label": "referralRateBps",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_array(t_uint16)15_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:65"
+          },
+          {
+            "label": "levelBusinessUsd",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_array(t_uint16)4_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:66"
+          },
+          {
+            "label": "salaryBusinessUsd",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_array(t_uint32)5_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:67"
+          },
+          {
+            "label": "salaryAmountUsd",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_array(t_uint16)5_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:68"
+          },
+          {
+            "label": "totalDeposited",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:70"
+          },
+          {
+            "label": "totalCompounded",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:71"
+          },
+          {
+            "label": "totalRewardsPaid",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:72"
+          },
+          {
+            "label": "rewardMode",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_mapping(t_address,t_enum(RewardMode)2230)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:74"
+          },
+          {
+            "label": "lastAutoCompoundDay",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:75"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_array(t_uint256)43_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:459"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)221_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Position)2244_storage)dyn_storage": {
+            "label": "struct VantexCapital.Position[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)15_storage": {
+            "label": "uint16[15]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)4_storage": {
+            "label": "uint16[4]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)5_storage": {
+            "label": "uint16[5]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)43_storage": {
+            "label": "uint256[43]",
+            "numberOfBytes": "1376"
+          },
+          "t_array(t_uint32)5_storage": {
+            "label": "uint32[5]",
+            "numberOfBytes": "32"
+          },
+          "t_contract(IERC20)1308": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_enum(Leg)2224": {
+            "label": "enum VantexCapital.Leg",
+            "members": [
+              "A",
+              "B"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(Plan)2221": {
+            "label": "enum VantexCapital.Plan",
+            "members": [
+              "Package1",
+              "Package2",
+              "Package3",
+              "Package4"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(RewardMode)2230": {
+            "label": "enum VantexCapital.RewardMode",
+            "members": [
+              "ROI",
+              "AutoCompound"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(Split)2227": {
+            "label": "enum VantexCapital.Split",
+            "members": [
+              "A60B40",
+              "A40B60"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_array(t_struct(Position)2244_storage)dyn_storage)": {
+            "label": "mapping(address => struct VantexCapital.Position[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_enum(RewardMode)2230)": {
+            "label": "mapping(address => enum VantexCapital.RewardMode)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_enum(Leg)2224,t_address))": {
+            "label": "mapping(address => mapping(enum VantexCapital.Leg => address))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(Member)2264_storage)": {
+            "label": "mapping(address => struct VantexCapital.Member)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_enum(Leg)2224,t_address)": {
+            "label": "mapping(enum VantexCapital.Leg => address)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Member)2264_storage": {
+            "label": "struct VantexCapital.Member",
+            "members": [
+              {
+                "label": "referrer",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "personalBusiness",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "legABusiness",
+                "type": "t_uint128",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "legBBusiness",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "salaryStartedAt",
+                "type": "t_uint40",
+                "offset": 16,
+                "slot": "2"
+              },
+              {
+                "label": "salaryRank",
+                "type": "t_uint8",
+                "offset": 21,
+                "slot": "2"
+              },
+              {
+                "label": "salaryClaims",
+                "type": "t_uint8",
+                "offset": 22,
+                "slot": "2"
+              },
+              {
+                "label": "split",
+                "type": "t_enum(Split)2227",
+                "offset": 23,
+                "slot": "2"
+              },
+              {
+                "label": "registered",
+                "type": "t_bool",
+                "offset": 24,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(Position)2244_storage": {
+            "label": "struct VantexCapital.Position",
+            "members": [
+              {
+                "label": "principal",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "claimed",
+                "type": "t_uint128",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "startedAt",
+                "type": "t_uint40",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "endsAt",
+                "type": "t_uint40",
+                "offset": 5,
+                "slot": "1"
+              },
+              {
+                "label": "dailyRateBps",
+                "type": "t_uint16",
+                "offset": 10,
+                "slot": "1"
+              },
+              {
+                "label": "plan",
+                "type": "t_enum(Plan)2221",
+                "offset": 12,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint128": {
+            "label": "uint128",
+            "numberOfBytes": "16"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_uint40": {
+            "label": "uint40",
+            "numberOfBytes": "5"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "f19eb97b07ad36bc64f24bcd4998de2f55f2f8a64f7e1d2e3e688ce2864b55ac": {
+      "address": "0x8dB60087A8E3DAE519B9b105f9D8d058EDc8c474",
+      "txHash": "0xabec1a6ae597acf1914f73f0d69a9ae708ab6a31dd7f2742747e91dc6bf09135",
+      "layout": {
+        "solcVersion": "0.8.24",
+        "storage": [
+          {
+            "label": "paymentToken",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_contract(IERC20)1308",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:57"
+          },
+          {
+            "label": "tokenDecimals",
+            "offset": 20,
+            "slot": "0",
+            "type": "t_uint8",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:58"
+          },
+          {
+            "label": "unit",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:59"
+          },
+          {
+            "label": "paused",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_bool",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:60"
+          },
+          {
+            "label": "members",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_mapping(t_address,t_struct(Member)2267_storage)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:62"
+          },
+          {
+            "label": "_positions",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_mapping(t_address,t_array(t_struct(Position)2247_storage)dyn_storage)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:63"
+          },
+          {
+            "label": "directLeg",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_mapping(t_address,t_mapping(t_enum(Leg)2227,t_address))",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:64"
+          },
+          {
+            "label": "referralEarnings",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:65"
+          },
+          {
+            "label": "referralRateBps",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_array(t_uint16)15_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:67"
+          },
+          {
+            "label": "levelBusinessUsd",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_array(t_uint16)4_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:68"
+          },
+          {
+            "label": "salaryBusinessUsd",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_array(t_uint32)5_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:69"
+          },
+          {
+            "label": "salaryAmountUsd",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_array(t_uint16)5_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:70"
+          },
+          {
+            "label": "totalDeposited",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:72"
+          },
+          {
+            "label": "totalCompounded",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:73"
+          },
+          {
+            "label": "totalRewardsPaid",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:74"
+          },
+          {
+            "label": "rewardMode",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_mapping(t_address,t_enum(RewardMode)2233)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:76"
+          },
+          {
+            "label": "lastAutoCompoundDay",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:77"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_array(t_uint256)43_storage",
+            "contract": "VantexCapital",
+            "src": "contracts/VantexCapital.sol:489"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)73_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)13_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(ReentrancyGuardStorage)221_storage": {
+            "label": "struct ReentrancyGuardUpgradeable.ReentrancyGuardStorage",
+            "members": [
+              {
+                "label": "_status",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_struct(Position)2247_storage)dyn_storage": {
+            "label": "struct VantexCapital.Position[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)15_storage": {
+            "label": "uint16[15]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)4_storage": {
+            "label": "uint16[4]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint16)5_storage": {
+            "label": "uint16[5]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)43_storage": {
+            "label": "uint256[43]",
+            "numberOfBytes": "1376"
+          },
+          "t_array(t_uint32)5_storage": {
+            "label": "uint32[5]",
+            "numberOfBytes": "32"
+          },
+          "t_contract(IERC20)1308": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_enum(Leg)2227": {
+            "label": "enum VantexCapital.Leg",
+            "members": [
+              "A",
+              "B"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(Plan)2224": {
+            "label": "enum VantexCapital.Plan",
+            "members": [
+              "Package1",
+              "Package2",
+              "Package3",
+              "Package4"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(RewardMode)2233": {
+            "label": "enum VantexCapital.RewardMode",
+            "members": [
+              "ROI",
+              "AutoCompound"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_enum(Split)2230": {
+            "label": "enum VantexCapital.Split",
+            "members": [
+              "A60B40",
+              "A40B60"
+            ],
+            "numberOfBytes": "1"
+          },
+          "t_mapping(t_address,t_array(t_struct(Position)2247_storage)dyn_storage)": {
+            "label": "mapping(address => struct VantexCapital.Position[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_enum(RewardMode)2233)": {
+            "label": "mapping(address => enum VantexCapital.RewardMode)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_mapping(t_enum(Leg)2227,t_address))": {
+            "label": "mapping(address => mapping(enum VantexCapital.Leg => address))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(Member)2267_storage)": {
+            "label": "mapping(address => struct VantexCapital.Member)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_enum(Leg)2227,t_address)": {
+            "label": "mapping(enum VantexCapital.Leg => address)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Member)2267_storage": {
+            "label": "struct VantexCapital.Member",
+            "members": [
+              {
+                "label": "referrer",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "personalBusiness",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "legABusiness",
+                "type": "t_uint128",
+                "offset": 16,
+                "slot": "1"
+              },
+              {
+                "label": "legBBusiness",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "salaryStartedAt",
+                "type": "t_uint40",
+                "offset": 16,
+                "slot": "2"
+              },
+              {
+                "label": "salaryRank",
+                "type": "t_uint8",
+                "offset": 21,
+                "slot": "2"
+              },
+              {
+                "label": "salaryClaims",
+                "type": "t_uint8",
+                "offset": 22,
+                "slot": "2"
+              },
+              {
+                "label": "split",
+                "type": "t_enum(Split)2230",
+                "offset": 23,
+                "slot": "2"
+              },
+              {
+                "label": "registered",
+                "type": "t_bool",
+                "offset": 24,
+                "slot": "2"
+              }
+            ],
+            "numberOfBytes": "96"
+          },
+          "t_struct(Position)2247_storage": {
+            "label": "struct VantexCapital.Position",
+            "members": [
+              {
+                "label": "principal",
+                "type": "t_uint128",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "claimed",
+                "type": "t_uint128",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "startedAt",
+                "type": "t_uint40",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "endsAt",
+                "type": "t_uint40",
+                "offset": 5,
+                "slot": "1"
+              },
+              {
+                "label": "dailyRateBps",
+                "type": "t_uint16",
+                "offset": 10,
+                "slot": "1"
+              },
+              {
+                "label": "plan",
+                "type": "t_enum(Plan)2224",
+                "offset": 12,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint128": {
+            "label": "uint128",
+            "numberOfBytes": "16"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint32": {
+            "label": "uint32",
+            "numberOfBytes": "4"
+          },
+          "t_uint40": {
+            "label": "uint40",
+            "numberOfBytes": "5"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.ReentrancyGuard": [
+            {
+              "contract": "ReentrancyGuardUpgradeable",
+              "label": "_status",
+              "type": "t_uint256",
+              "src": "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol:43",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
     }
   }
 }

@@ -42,6 +42,14 @@ describe("VantexCapital", function () {
     await expect(vantex.connect(carol).register(owner.address, 0, 1)).to.be.revertedWithCustomError(vantex, "LegOccupied");
   });
 
+  it("stores ROI or auto-compound mode during registration", async function () {
+    const { owner, alice, bob, vantex } = await fixture();
+    await vantex.connect(alice).registerWithMode(owner.address, 0, 0, 0);
+    await vantex.connect(bob).registerWithMode(owner.address, 1, 0, 1);
+    expect(await vantex.rewardMode(alice.address)).to.equal(0);
+    expect(await vantex.rewardMode(bob.address)).to.equal(1);
+  });
+
   it("allows only the owner to upgrade while preserving registrations and positions", async function () {
     const { owner, alice, vantex } = await fixture();
     await vantex.connect(alice).register(owner.address, 0, 0);
@@ -107,12 +115,18 @@ describe("VantexCapital", function () {
     const { vantex } = await fixture();
     const package1 = await vantex.planTerms(usdt(100), 0);
     expect(package1[0]).to.equal(100);
-    expect(package1[1]).to.equal(280 * DAY);
-    expect((await vantex.planTerms(usdt(101), 1))[0]).to.equal(110);
+    expect(package1[1]).to.equal(200 * DAY);
+    const package2 = await vantex.planTerms(usdt(101), 1);
+    expect(package2[0]).to.equal(110);
+    expect(package2[1]).to.equal(Math.ceil(20_000 * DAY / 110));
     expect((await vantex.planTerms(usdt(500), 1))[0]).to.equal(110);
-    expect((await vantex.planTerms(usdt(501), 2))[0]).to.equal(120);
+    const package3 = await vantex.planTerms(usdt(501), 2);
+    expect(package3[0]).to.equal(120);
+    expect(package3[1]).to.equal(Math.ceil(20_000 * DAY / 120));
     expect((await vantex.planTerms(usdt(1000), 2))[0]).to.equal(120);
-    expect((await vantex.planTerms(usdt(1001), 3))[0]).to.equal(130);
+    const package4 = await vantex.planTerms(usdt(1001), 3);
+    expect(package4[0]).to.equal(130);
+    expect(package4[1]).to.equal(Math.ceil(20_000 * DAY / 130));
     expect((await vantex.planTerms(usdt(2500), 3))[0]).to.equal(130);
     await expect(vantex.planTerms(usdt(101), 0)).to.be.revertedWithCustomError(vantex, "InvalidAmount");
     await expect(vantex.planTerms(usdt(500), 2)).to.be.revertedWithCustomError(vantex, "InvalidAmount");
@@ -150,6 +164,16 @@ describe("VantexCapital", function () {
     expect(position.endsAt - position.startedAt).to.equal(BigInt(280 * DAY));
   });
 
+  it("finishes higher-rate packages sooner while capping payout at exactly 2x", async function () {
+    const { owner, vantex } = await fixture();
+    await setNextBlockOnWeekday(1);
+    await vantex.invest(usdt(101), 1);
+    const [position] = await vantex.positionsOf(owner.address);
+    expect(position.endsAt - position.startedAt).to.be.lessThan(BigInt(280 * DAY));
+    await time.increase(300 * DAY);
+    expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(202));
+  });
+
   it("compounds claimable ROI into a new selected-plan position", async function () {
     const { owner, vantex } = await fixture();
     await setNextBlockOnWeekday(1);
@@ -161,6 +185,29 @@ describe("VantexCapital", function () {
     expect(positions[1].principal).to.be.closeTo(usdt(120), 1_000n);
     expect(positions[1].dailyRateBps).to.equal(110);
     expect(await vantex.totalCompounded()).to.be.closeTo(usdt(120), 1_000n);
+  });
+
+  it("auto-compounds an opted-in member once on a Monday-Friday earning day", async function () {
+    const { owner, vantex } = await fixture();
+    await vantex.setRewardMode(1);
+    await setNextBlockOnWeekday(1); // Monday UTC
+    await vantex.invest(usdt(1000), 2);
+    await time.increase(14 * DAY);
+
+    await expect(vantex.processAutoCompound(owner.address)).to.emit(vantex, "RoiCompounded");
+    const positions = await vantex.positionsOf(owner.address);
+    expect(positions).to.have.length(2);
+    expect(positions[1].principal).to.be.closeTo(usdt(120), 1_000n);
+    await expect(vantex.processAutoCompound(owner.address)).to.be.revertedWithCustomError(vantex, "AlreadyProcessed");
+  });
+
+  it("rejects automatic compounding on weekends", async function () {
+    const { owner, vantex } = await fixture();
+    await vantex.setRewardMode(1);
+    await setNextBlockOnWeekday(5); // Friday UTC
+    await vantex.invest(usdt(1000), 2);
+    await time.increase(DAY); // Saturday UTC
+    await expect(vantex.processAutoCompound(owner.address)).to.be.revertedWithCustomError(vantex, "OutsideEarningDay");
   });
 
   it("normalizes 60/40 business and unlocks salary cycles", async function () {

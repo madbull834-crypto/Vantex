@@ -14,13 +14,15 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
  * @notice Stablecoin investment and referral accounting based on the supplied Vantex plan.
  * @dev Rates use basis points (100 = 1%). Each package releases equal daily profit and capital,
  *      producing the brochure totals of 1.00%–1.30% per earning day. ROI accrues Monday through
- *      Friday in UTC, and positions are capped at 200 earning days (40 weeks). This is a pooled-reward contract:
+ *      Friday in UTC, and every position stops at a 2x payout. Higher-rate packages therefore
+ *      finish in fewer earning days. This is a pooled-reward contract:
  *      the owner must keep it solvent and no return is guaranteed by the code.
  */
 contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     uint16 private constant BPS = 10_000;
+    uint16 private constant MAX_PAYOUT_BPS = 20_000;
     uint16 private constant MAX_POSITIONS = 50;
     uint32 private constant DAY = 1 days;
     uint32 private constant SALARY_CYCLE = 15 days;
@@ -29,6 +31,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     enum Plan { Package1, Package2, Package3, Package4 }
     enum Leg { A, B }
     enum Split { A60B40, A40B60 }
+    enum RewardMode { ROI, AutoCompound }
 
     struct Position {
         uint128 principal;
@@ -70,6 +73,9 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     uint256 public totalCompounded;
     uint256 public totalRewardsPaid;
 
+    mapping(address => RewardMode) public rewardMode;
+    mapping(address => uint256) public lastAutoCompoundDay;
+
     error Paused();
     error InvalidAmount();
     error InvalidReferrer();
@@ -79,6 +85,9 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     error NothingToClaim();
     error Insolvent();
     error TransferRestricted();
+    error AutoCompoundDisabled();
+    error OutsideEarningDay();
+    error AlreadyProcessed();
 
     event Registered(address indexed member, address indexed referrer, Leg leg, Split split);
     event Invested(address indexed member, uint256 indexed positionId, uint256 amount, Plan plan, uint16 dailyRateBps, uint40 endsAt);
@@ -89,6 +98,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     event SalaryClaimed(address indexed member, uint8 rank, uint8 cycle, uint256 amount);
     event RewardsFunded(address indexed funder, uint256 amount);
     event PauseSet(bool paused);
+    event RewardModeSet(address indexed member, RewardMode mode);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -117,7 +127,11 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function register(address referrer, Leg leg, Split split) external whenNotPaused {
-        _register(msg.sender, referrer, leg, split);
+        _register(msg.sender, referrer, leg, split, RewardMode.ROI);
+    }
+
+    function registerWithMode(address referrer, Leg leg, Split split, RewardMode mode) external whenNotPaused {
+        _register(msg.sender, referrer, leg, split, mode);
     }
 
     function invest(uint256 amount, Plan plan) external nonReentrant whenNotPaused {
@@ -147,9 +161,32 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         bytes32 r,
         bytes32 s
     ) external nonReentrant whenNotPaused {
-        _register(msg.sender, referrer, leg, split);
+        _register(msg.sender, referrer, leg, split, RewardMode.ROI);
         IERC20Permit(address(paymentToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
         _invest(msg.sender, amount, plan);
+    }
+
+    function registerAndInvestWithPermitAndMode(
+        address referrer,
+        Leg leg,
+        Split split,
+        RewardMode mode,
+        uint256 amount,
+        Plan plan,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant whenNotPaused {
+        _register(msg.sender, referrer, leg, split, mode);
+        IERC20Permit(address(paymentToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
+        _invest(msg.sender, amount, plan);
+    }
+
+    function setRewardMode(RewardMode mode) external {
+        if (!members[msg.sender].registered) revert InvalidReferrer();
+        rewardMode[msg.sender] = mode;
+        emit RewardModeSet(msg.sender, mode);
     }
 
     function claimRoi() external nonReentrant whenNotPaused returns (uint256 amount) {
@@ -175,7 +212,34 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function compoundRoi(Plan plan) external nonReentrant whenNotPaused returns (uint256 amount) {
-        Position[] storage positions = _positions[msg.sender];
+        amount = _collectPending(msg.sender);
+        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
+        _createCompoundedPosition(msg.sender, amount, plan, rate, earningDuration);
+    }
+
+    /**
+     * @notice Compounds an opted-in member's accrued ROI once per Monday-Friday UTC day.
+     * @dev Permissionless so an automation keeper can submit the transaction for the member.
+     *      The keeper should call near the end of each UTC earning day.
+     */
+    function processAutoCompound(address account) external nonReentrant whenNotPaused returns (uint256 amount) {
+        if (!members[account].registered || rewardMode[account] != RewardMode.AutoCompound) {
+            revert AutoCompoundDisabled();
+        }
+        uint256 dayNumber = block.timestamp / DAY;
+        uint256 weekday = (dayNumber + 4) % 7; // Sunday=0, Monday=1, ..., Saturday=6.
+        if (weekday == 0 || weekday == 6) revert OutsideEarningDay();
+        if (lastAutoCompoundDay[account] >= dayNumber) revert AlreadyProcessed();
+
+        amount = _collectPending(account);
+        Plan plan = _planForAmount(amount);
+        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
+        lastAutoCompoundDay[account] = dayNumber;
+        _createCompoundedPosition(account, amount, plan, rate, earningDuration);
+    }
+
+    function _collectPending(address account) private returns (uint256 amount) {
+        Position[] storage positions = _positions[account];
         if (positions.length >= MAX_POSITIONS) revert TooManyPositions();
         for (uint256 i; i < positions.length; ++i) {
             uint256 earned = _earned(positions[i]);
@@ -185,12 +249,21 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
             }
         }
         if (amount < unit || amount > 2_500 * unit) revert InvalidAmount();
-        (uint16 rate, uint32 duration) = planTerms(amount, plan);
+    }
+
+    function _createCompoundedPosition(
+        address account,
+        uint256 amount,
+        Plan plan,
+        uint16 rate,
+        uint32 earningDuration
+    ) private {
         uint40 started = uint40(block.timestamp);
-        _positions[msg.sender].push(Position(uint128(amount), 0, started, started + duration, rate, plan));
+        uint40 ends = uint40(_addBusinessSeconds(started, earningDuration));
+        _positions[account].push(Position(uint128(amount), 0, started, ends, rate, plan));
         totalCompounded += amount;
-        emit RoiCompounded(msg.sender, _positions[msg.sender].length - 1, amount, plan);
-        _payReferralRoi(msg.sender, amount / 2);
+        emit RoiCompounded(account, _positions[account].length - 1, amount, plan);
+        _payReferralRoi(account, amount / 2);
     }
 
     function claimSalary() external nonReentrant whenNotPaused returns (uint256 amount) {
@@ -225,14 +298,13 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         emit PauseSet(value);
     }
 
-    function planTerms(uint256 amount, Plan plan) public view returns (uint16 rate, uint32 duration) {
+    function planTerms(uint256 amount, Plan plan) public view returns (uint16 rate, uint32 earningDuration) {
         if (plan == Plan.Package1 && amount >= unit && amount <= 100 * unit) rate = 100;
         else if (plan == Plan.Package2 && amount >= 101 * unit && amount <= 500 * unit) rate = 110;
         else if (plan == Plan.Package3 && amount >= 501 * unit && amount <= 1_000 * unit) rate = 120;
         else if (plan == Plan.Package4 && amount >= 1_001 * unit && amount <= 2_500 * unit) rate = 130;
         else revert InvalidAmount();
-        // Forty complete weeks contain exactly 200 Monday-Friday earning days.
-        duration = 280 days;
+        earningDuration = uint32((uint256(MAX_PAYOUT_BPS) * DAY + rate - 1) / rate);
     }
 
     function pendingRoi(address account) public view returns (uint256 amount) {
@@ -266,15 +338,17 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         for (uint8 i; i < 5; ++i) if (business >= uint256(salaryBusinessUsd[i]) * unit) rank = i + 1;
     }
 
-    function _register(address account, address referrer, Leg leg, Split split) private {
+    function _register(address account, address referrer, Leg leg, Split split, RewardMode mode) private {
         if (members[account].registered) revert AlreadyRegistered();
         if (referrer == address(0) || referrer == account || !members[referrer].registered) revert InvalidReferrer();
         if (directLeg[referrer][leg] != address(0)) revert LegOccupied();
         members[account].registered = true;
         members[account].referrer = referrer;
         members[account].split = split;
+        rewardMode[account] = mode;
         directLeg[referrer][leg] = account;
         emit Registered(account, referrer, leg, split);
+        emit RewardModeSet(account, mode);
     }
 
     function _invest(address account, uint256 amount, Plan plan) private {
@@ -282,10 +356,10 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         if (amount < unit || amount > 2_500 * unit) revert InvalidAmount();
         if (_positions[account].length >= MAX_POSITIONS) revert TooManyPositions();
 
-        (uint16 rate, uint32 duration) = planTerms(amount, plan);
+        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
         paymentToken.safeTransferFrom(account, address(this), amount);
         uint40 started = uint40(block.timestamp);
-        uint40 ends = started + duration;
+        uint40 ends = uint40(_addBusinessSeconds(started, earningDuration));
         _positions[account].push(Position(uint128(amount), 0, started, ends, rate, plan));
         members[account].personalBusiness += uint128(amount);
         totalDeposited += amount;
@@ -297,7 +371,9 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         uint256 until = block.timestamp < position.endsAt ? block.timestamp : position.endsAt;
         if (until <= position.startedAt) return 0;
         uint256 earningSeconds = _businessSecondsUntil(until) - _businessSecondsUntil(position.startedAt);
-        return uint256(position.principal) * position.dailyRateBps * earningSeconds / DAY / BPS;
+        uint256 amount = uint256(position.principal) * position.dailyRateBps * earningSeconds / DAY / BPS;
+        uint256 maximum = uint256(position.principal) * 2;
+        return amount < maximum ? amount : maximum;
     }
 
     /**
@@ -317,6 +393,40 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         uint256 earningSeconds = (completeWeeks * 5 + weekdaysBeforeToday) * DAY;
         if (remainderDays < 2 || remainderDays > 3) earningSeconds += timestamp % DAY;
         return earningSeconds;
+    }
+
+    function _planForAmount(uint256 amount) private view returns (Plan) {
+        if (amount >= unit && amount <= 100 * unit) return Plan.Package1;
+        if (amount >= 101 * unit && amount <= 500 * unit) return Plan.Package2;
+        if (amount >= 501 * unit && amount <= 1_000 * unit) return Plan.Package3;
+        if (amount >= 1_001 * unit && amount <= 2_500 * unit) return Plan.Package4;
+        revert InvalidAmount();
+    }
+
+    function _addBusinessSeconds(uint256 timestamp, uint256 earningSeconds) private pure returns (uint256 cursor) {
+        cursor = timestamp;
+        while (earningSeconds != 0) {
+            uint256 dayNumber = cursor / DAY;
+            uint256 secondsIntoDay = cursor % DAY;
+            uint256 weekday = (dayNumber + 4) % 7; // Sunday=0, Monday=1, ..., Saturday=6.
+
+            if (weekday == 0 || weekday == 6) {
+                uint256 daysUntilMonday = weekday == 6 ? 2 : 1;
+                cursor = (dayNumber + daysUntilMonday) * DAY;
+                continue;
+            }
+            if (weekday == 1 && secondsIntoDay == 0 && earningSeconds >= 5 * DAY) {
+                uint256 completeWeeks = earningSeconds / (5 * DAY);
+                cursor += completeWeeks * 7 * DAY;
+                earningSeconds -= completeWeeks * 5 * DAY;
+                continue;
+            }
+
+            uint256 availableToday = DAY - secondsIntoDay;
+            if (earningSeconds <= availableToday) return cursor + earningSeconds;
+            earningSeconds -= availableToday;
+            cursor = (dayNumber + 1) * DAY;
+        }
     }
 
     function _propagateBusiness(address investor, uint256 amount) private {
@@ -376,5 +486,5 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[45] private __gap;
+    uint256[43] private __gap;
 }

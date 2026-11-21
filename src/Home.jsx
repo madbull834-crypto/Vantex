@@ -1,0 +1,199 @@
+import React, { useEffect, useState } from "react";
+import {
+  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Coins, Crown, Gift, LayoutDashboard,
+  Menu, Network, ShieldCheck, Sparkles, TrendingUp, UserPlus, Users, Wallet, X
+} from "lucide-react";
+import "./home.css";
+
+const money = (value, digits = 2) => Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
+const salaryTiers = [[1000, 25], [2000, 50], [5000, 125], [10000, 250], [20000, 500]];
+
+const faqs = [
+  ["What do I need to join?", "A free crypto wallet such as MetaMask or Trust Wallet, plus a little test BNB (tBNB) for network fees. If you don't have tBNB yet, the join window shows you where to get it free and continues automatically once it arrives."],
+  ["Do I need an email or password?", "No. Your wallet is your account. You approve each action in your wallet, and nobody else can move your funds."],
+  ["How do invitations work?", "When you open someone's referral link, you join their team automatically. If their two direct positions (Organization A and B) are full, you're placed in the next open position in their team."],
+  ["What is the difference between ROI and Auto Compound?", "ROI lets you claim your Monday–Friday rewards to your wallet. Auto Compound reinvests those rewards into new positions. You choose when you join."],
+  ["Are returns guaranteed?", "No. The figures on this page are calculations from the contract terms, not promises. Rewards depend on the contract holding enough funds, and smart contracts carry risk. Only use money you can afford to lose."],
+  ["Is this live with real money?", "The app currently runs on BSC Testnet with test tokens, so you can try every feature without spending real funds."]
+];
+
+export default function Home({
+  account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
+  isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [openFaq, setOpenFaq] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const registered = Boolean(data.member?.registered);
+  const plan = plans[selectedPlan];
+  const numericAmount = Number(amount) || 0;
+  const dailyPayout = numericAmount * plan.rateValue / 100;
+  const profit = Math.max(0, projected - numericAmount);
+  const primaryAction = registered ? startInvesting : openRegistration;
+  const primaryLabel = registered ? "Create a position" : "Join in one minute";
+  const go = (id) => { setMenuOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); };
+
+  return <div className="hp">
+    <header className={`hp-nav ${scrolled ? "scrolled" : ""}`}>
+      <div className="hp-wrap hp-nav-inner">
+        <a className="hp-brand" href="#top" onClick={event => { event.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+          <span className="hp-mark">V</span><span>VANTEX<small>CAPITAL</small></span>
+        </a>
+        <nav className={`hp-links ${menuOpen ? "open" : ""}`}>
+          <button onClick={() => go("how")}>How it works</button>
+          <button onClick={() => go("packages")}>Packages</button>
+          <button onClick={() => go("network")}>Network</button>
+          <button onClick={() => go("faq")}>FAQ</button>
+          <button className="hp-links-cta" onClick={() => { setMenuOpen(false); registered ? openDashboard() : openRegistration(); }}>{registered ? "Open dashboard" : "Join now"}</button>
+        </nav>
+        <div className="hp-nav-actions">
+          {account
+            ? <button className="hp-wallet" onClick={openDashboard}><i/>{short(account)}<LayoutDashboard size={15}/></button>
+            : <button className="hp-wallet" onClick={() => connect()}><Wallet size={15}/>Connect</button>}
+          <button className="hp-btn gold hp-nav-join" onClick={registered ? openDashboard : openRegistration}>{registered ? "Dashboard" : "Join now"}</button>
+          <button className="hp-menu" aria-label="Menu" onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={20}/> : <Menu size={20}/>}</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      {linkReferrer && !registered && <div className="hp-wrap">
+        <div className="hp-invite">
+          <Gift size={18}/><span><b>You've been invited</b> by {short(linkReferrer)}. Join now to be placed in their team.</span>
+          <button className="hp-btn gold small" onClick={openRegistration}>Accept invitation <ArrowRight size={15}/></button>
+        </div>
+      </div>}
+      {notice && <div className="hp-wrap"><div className="hp-notice">{notice}</div></div>}
+
+      <section className="hp-hero hp-wrap">
+        <div className="hp-hero-copy">
+          <span className="hp-eyebrow"><Sparkles size={13}/> Stablecoin packages · On-chain rules</span>
+          <h1>Grow your capital.<br/><em>Build your team.</em></h1>
+          <p>Pick a package, earn Monday–Friday rewards and grow an A/B organization. Every rule runs in a public smart contract you can verify.</p>
+          <div className="hp-hero-actions">
+            <button className="hp-btn gold large" onClick={primaryAction}>{primaryLabel} <ArrowUpRight size={18}/></button>
+            <button className="hp-btn ghost large" onClick={() => go("packages")}>See packages</button>
+          </div>
+          <ul className="hp-checks">
+            <li><Check size={15}/>No email or password</li>
+            <li><Check size={15}/>Join with one wallet confirmation</li>
+            <li><Check size={15}/>Free to try on BSC Testnet</li>
+          </ul>
+        </div>
+
+        <div className="hp-calc" aria-label="Package calculator">
+          <div className="hp-calc-head"><span>Estimate your plan</span><b className={`hp-tag ${plan.color}`}>{plan.name}</b></div>
+          <label htmlFor="hp-amount">Amount</label>
+          <div className="hp-calc-amount"><span>$</span><input id="hp-amount" type="number" min="1" max="2500" inputMode="decimal" value={amount} onChange={event => changeAmount(event.target.value)}/><b>USDT</b></div>
+          <input className="hp-range" type="range" min="1" max="2500" step="1" value={Math.min(2500, Math.max(1, numericAmount))} onChange={event => changeAmount(event.target.value)} aria-label="Amount slider"/>
+          <div className="hp-calc-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={numericAmount === value ? "active" : ""} onClick={() => changeAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
+          <div className="hp-calc-rows">
+            <div><span>Daily payout <small>Mon–Fri</small></span><b>${money(dailyPayout)}</b></div>
+            <div><span>Earning days</span><b>≈{plan.earningDays}</b></div>
+            <div><span>Profit over the term</span><b className="up">+${money(profit)}</b></div>
+            <div className="total"><span>Total paid back <small>incl. your capital</small></span><b>${money(projected)}</b></div>
+          </div>
+          <button className="hp-btn gold full" onClick={primaryAction}>{registered ? `Start ${plan.name}` : "Join & start"} <ArrowRight size={16}/></button>
+          <p className="hp-calc-note">An estimate from the contract terms, not a guarantee.</p>
+        </div>
+      </section>
+
+      <section className="hp-strip">
+        <div className="hp-wrap hp-strip-inner">
+          <div><b>4</b><span>packages from $1</span></div>
+          <div><b>{plans[3].totalRate}</b><span>top daily payout</span></div>
+          <div><b>15</b><span>network reward levels</span></div>
+          <div><b>5</b><span>salary milestones</span></div>
+        </div>
+      </section>
+
+      <section id="how" className="hp-section hp-wrap">
+        <div className="hp-head center"><span className="hp-eyebrow">How it works</span><h2>Up and running in three steps</h2></div>
+        <div className="hp-steps">
+          <article><div className="hp-step-icon"><Wallet/></div><span>Step 1</span><h3>Connect your wallet</h3><p>Use MetaMask, Trust Wallet or any browser wallet. We switch you to the right network automatically.</p></article>
+          <article><div className="hp-step-icon"><UserPlus/></div><span>Step 2</span><h3>Join with one tap</h3><p>Confirm once in your wallet. Your sponsor and team position are set for you automatically.</p></article>
+          <article><div className="hp-step-icon"><TrendingUp/></div><span>Step 3</span><h3>Invest &amp; invite</h3><p>Open a package, earn Monday–Friday rewards and share your link to grow Organization A and B.</p></article>
+        </div>
+        <div className="hp-center"><button className="hp-btn gold" onClick={primaryAction}>{primaryLabel} <ArrowUpRight size={16}/></button></div>
+      </section>
+
+      <section id="packages" className="hp-section hp-wrap">
+        <div className="hp-head"><div><span className="hp-eyebrow">Packages</span><h2>Choose your pace</h2></div><p>Every package stops at a 2× total payout. Higher Monday–Friday daily rates reach 2× in fewer earning days. Package returns are the same for everyone, whatever your team volume.</p></div>
+        <div className="hp-plans">{plans.map(item => <article key={item.name} className={`hp-plan ${item.color} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => selectPlan(item.index)}>
+          <div className="hp-plan-top"><span>{item.name}</span>{item.index === 2 && <b>POPULAR</b>}</div>
+          <h3>{item.totalRate}<small>/ day</small></h3>
+          <p className="hp-plan-range">{item.label}</p>
+          <ul>
+            <li><Coins size={14}/>{item.rate} daily profit</li>
+            <li><ShieldCheck size={14}/>{item.rate} daily capital release</li>
+            <li><CalendarDays size={14}/>{item.days}</li>
+          </ul>
+          <button className="hp-btn outline full" onClick={event => { event.stopPropagation(); selectPlan(item.index); primaryAction(); }}>{registered ? "Start this package" : "Join & choose"} <ArrowRight size={15}/></button>
+        </article>)}</div>
+      </section>
+
+      <section id="network" className="hp-section hp-network">
+        <div className="hp-wrap hp-network-grid">
+          <div>
+            <span className="hp-eyebrow">Network rewards</span>
+            <h2>Two organizations.<br/>Fifteen levels.</h2>
+            <p>Your team grows in two organizations, A and B. Team volume from their package deposits unlocks two kinds of income: <b>ROI-on-ROI</b>, a share of the ROI your team claims across up to 15 levels, and <b>salary</b> at each balanced-volume milestone.</p>
+            <div className="hp-split">
+              <div className="a"><span>Organization A</span><b>60%</b></div>
+              <i>or</i>
+              <div className="b"><span>Organization B</span><b>60%</b></div>
+            </div>
+            <small className="hp-muted">You choose your split when you join, and the other organization carries 40%. The split applies only to ROI-on-ROI and salary income. It never changes package returns.</small>
+          </div>
+          <div className="hp-levels" aria-label="Level reward percentages">
+            {levels.map((rate, index) => <div key={index}><span>L{index + 1}</span><i><em style={{ width: `${rate * 10}%` }}/></i><b>{rate}%</b></div>)}
+          </div>
+        </div>
+      </section>
+
+      <section className="hp-section hp-wrap">
+        <div className="hp-head"><div><span className="hp-eyebrow">Business salary</span><h2>Milestones that pay</h2></div><p>Reach a balanced-business milestone to unlock a salary paid every 15 days for six cycles.</p></div>
+        <div className="hp-salary">{salaryTiers.map(([business, salary], index) => <article key={business}>
+          <span><Crown size={14}/> Rank {index + 1}</span>
+          <strong>${salary}</strong><small>every 15 days × 6</small>
+          <p>${business.toLocaleString()} balanced business</p>
+        </article>)}</div>
+      </section>
+
+      <section id="faq" className="hp-section hp-wrap hp-faq-wrap">
+        <div className="hp-head center"><span className="hp-eyebrow">FAQ</span><h2>Questions, answered</h2></div>
+        <div className="hp-faq">{faqs.map(([question, answer], index) => <div key={question} className={openFaq === index ? "open" : ""}>
+          <button aria-expanded={openFaq === index} onClick={() => setOpenFaq(openFaq === index ? -1 : index)}>{question}<ChevronDown size={18}/></button>
+          {openFaq === index && <p>{answer}</p>}
+        </div>)}</div>
+      </section>
+
+      <section className="hp-wrap">
+        <div className="hp-final">
+          <div><Users size={22}/><h2>{registered ? "Your dashboard is ready." : "Ready to join?"}</h2><p>{registered ? "Track positions, claim rewards and share your referral link." : "Connect your wallet and join in about a minute. No email or password needed."}</p></div>
+          <button className="hp-btn gold large" onClick={registered ? openDashboard : openRegistration}>{registered ? "Open dashboard" : "Join now"} <ArrowUpRight size={18}/></button>
+        </div>
+      </section>
+    </main>
+
+    <footer className="hp-footer">
+      <div className="hp-wrap">
+        <div className="hp-footer-top">
+          <div className="hp-brand"><span className="hp-mark">V</span><span>VANTEX<small>CAPITAL</small></span></div>
+          <nav><button onClick={() => go("how")}>How it works</button><button onClick={() => go("packages")}>Packages</button><button onClick={() => go("network")}>Network</button><button onClick={openDashboard}>Dashboard</button></nav>
+        </div>
+        <p className="hp-risk"><Network size={14}/> {isConfigured ? "Running on BSC Testnet with test tokens." : "Preview mode: contracts are not configured."} Figures shown are calculations from the smart contract terms, not guarantees. Rewards depend on available contract funds, and smart contracts carry risk. Only participate with funds you can afford to lose.</p>
+        <span className="hp-copy">© 2026 Vantex Capital</span>
+      </div>
+    </footer>
+  </div>;
+}

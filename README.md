@@ -4,8 +4,9 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 
 ## Included rules
 
-- Four amount-bound packages: $1–$100 at 0.50%, $101–$500 at 0.55%, $501–$1,000 at 0.60%, and $1,001–$2,500 at 0.65% profit per earning day. ROI accrues Monday–Friday in UTC. Each package releases capital at the same rate (1.00%–1.30% combined payout) for 200 earning days across 40 weeks.
+- Four amount-bound packages: $1–$100 at 0.50%, $101–$500 at 0.55%, $501–$1,000 at 0.60%, and $1,001–$2,500 at 0.65% profit per earning day. ROI accrues Monday–Friday in UTC, with matching capital release for combined daily rates of 1.00%–1.30%. Every position stops at exactly 2× principal, so the packages finish in approximately 200, 182, 167, and 154 earning days respectively.
 - ROI-on-ROI commissions apply to the profit component of a member's claim, not to released capital.
+- Registration supports `ROI` mode for claimable rewards or `Auto Compound` mode. The permissionless automation entry point processes an opted-in member at most once per Monday–Friday UTC day; an external keeper must submit that daily transaction.
 - Fifteen-level ROI referral percentages: `10, 5, 4, 3, 3, 3, 2, 2, 1, 1, 2, 2, 3, 4, 5`.
 - Binary A/B registration with selectable 60/40 or 40/60 volume normalization.
 - Qualified depth at $100, $300, $800, and $1,500 of balanced business.
@@ -14,7 +15,7 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 ## BSC Testnet contracts
 
 - Vantex UUPS proxy: `0x085E76feB9643253250EcC9b9A71d00035C4aF3f`
-- Current implementation: `0xD3b68b8A41CB0dc1FB3bE77da295A4d0318B5f4b`
+- Current implementation: `0x8dB60087A8E3DAE519B9b105f9D8d058EDc8c474`
 - Mock USDT: `0xAEf967A8C08AFd2F45D40a66E75612EC1C31BAC4`
 - Network: BSC Testnet (`97`)
 
@@ -42,4 +43,4 @@ To upgrade the implementation while preserving proxy state, set `VANTEX_PROXY_AD
 
 ## Important assumptions and risk notes
 
-The source brochure does not specify a blockchain, token, package duration, withdrawal policy, or how 60/40 organization volume is calculated. This implementation uses BSC Testnet, a 6-decimal mock stablecoin, caps package positions at 200 Monday–Friday earning days, and normalizes balanced volume against the selected split. It does not promise solvency or profit; rewards require sufficient token funding. Commission and financial-product rules vary by jurisdiction. Obtain a security audit and legal review before any production deployment.
+The source brochure does not specify a blockchain, token, withdrawal policy, or how 60/40 organization volume is calculated. This implementation uses BSC Testnet, a 6-decimal mock stablecoin, caps every position at a 2× payout, and normalizes balanced volume against the selected split. It does not promise solvency or profit; rewards require sufficient token funding. Commission and financial-product rules vary by jurisdiction. Obtain a security audit and legal review before any production deployment.

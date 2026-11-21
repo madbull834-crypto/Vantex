@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ethers } from "ethers";
-import { ArrowUpRight, BarChart3, ChevronRight, CircleDollarSign, Clock3, Crown, LayoutDashboard, Network, ShieldCheck, Sparkles, Users, Wallet, Zap } from "lucide-react";
 import Dashboard from "./Dashboard";
+import Home from "./Home";
+import RegistrationWizard from "./RegistrationWizard";
+import { connectErrorMessage, isOnTestnet, lastWallet, rememberWallet, requestAccount, useWallets } from "./wallet";
 import "./styles.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_VANTEX_ADDRESS || "";
@@ -10,16 +12,20 @@ const TOKEN_ADDRESS = import.meta.env.VITE_TOKEN_ADDRESS || "";
 const TOKEN_DECIMALS = Number(import.meta.env.VITE_TOKEN_DECIMALS || 6);
 const ZERO = "0x0000000000000000000000000000000000000000";
 const REFERRAL_PARAMS = new URLSearchParams(window.location.search);
-const LINK_REFERRER = ethers.isAddress(REFERRAL_PARAMS.get("ref") || "") ? REFERRAL_PARAMS.get("ref") : "";
-const LINK_LEG = REFERRAL_PARAMS.get("leg") === "1" ? 1 : 0;
-const BSC_TESTNET_CHAIN_ID = "0x61";
-const BSC_TESTNET = {
-  chainId: BSC_TESTNET_CHAIN_ID,
-  chainName: "BSC Testnet",
-  nativeCurrency: { name: "Test BNB", symbol: "tBNB", decimals: 18 },
-  rpcUrls: ["https://data-seed-prebsc-1-s1.bnbchain.org:8545"],
-  blockExplorerUrls: ["https://testnet.bscscan.com"]
+const REF_STORAGE_KEY = "vantex-referral";
+const storage = {
+  get() { try { return JSON.parse(localStorage.getItem(REF_STORAGE_KEY) || "null"); } catch { return null; } },
+  set(value) { try { localStorage.setItem(REF_STORAGE_KEY, JSON.stringify(value)); } catch {} },
+  clear() { try { localStorage.removeItem(REF_STORAGE_KEY); } catch {} }
 };
+const QUERY_REFERRER = ethers.isAddress(REFERRAL_PARAMS.get("ref") || "") ? REFERRAL_PARAMS.get("ref") : "";
+if (QUERY_REFERRER) storage.set({ ref: QUERY_REFERRER, leg: REFERRAL_PARAMS.get("leg") === "1" ? 1 : 0 });
+// Remember the inviter across reloads so a refresh or wallet-app redirect doesn't lose the sponsor.
+const STORED_REFERRAL = storage.get();
+const LINK_REFERRER = QUERY_REFERRER || (ethers.isAddress(STORED_REFERRAL?.ref || "") ? STORED_REFERRAL.ref : "");
+const LINK_LEG = QUERY_REFERRER ? (REFERRAL_PARAMS.get("leg") === "1" ? 1 : 0) : (STORED_REFERRAL?.leg === 1 ? 1 : 0);
+const BSC_RPC = "https://data-seed-prebsc-1-s1.bnbchain.org:8545";
+const AUTO_OPEN_REGISTRATION = Boolean(QUERY_REFERRER) || REFERRAL_PARAMS.get("action") === "register";
 
 const VANTEX_ABI = [
   "error AlreadyRegistered()",
@@ -32,17 +38,21 @@ const VANTEX_ABI = [
   "function owner() view returns (address)",
   "function directLeg(address,uint8) view returns (address)",
   "function referralEarnings(address) view returns (uint256)",
+  "function rewardMode(address) view returns (uint8)",
   "function pendingRoi(address) view returns (uint256)",
   "function balancedBusiness(address) view returns (uint256)",
   "function qualifiedLevel(address) view returns (uint8)",
   "function positionsOf(address) view returns (tuple(uint128 principal,uint128 claimed,uint40 startedAt,uint40 endsAt,uint16 dailyRateBps,uint8 plan)[])",
   "function register(address referrer,uint8 leg,uint8 split)",
+  "function registerWithMode(address referrer,uint8 leg,uint8 split,uint8 mode)",
   "function invest(uint256 amount,uint8 plan)",
   "function investWithPermit(uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
   "function registerAndInvestWithPermit(address referrer,uint8 leg,uint8 split,uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
+  "function registerAndInvestWithPermitAndMode(address referrer,uint8 leg,uint8 split,uint8 mode,uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
   "function compoundRoi(uint8 plan)",
   "function claimRoi()",
-  "function claimSalary()"
+  "function claimSalary()",
+  "function setRewardMode(uint8 mode)"
 ];
 const TOKEN_ABI = [
   "function approve(address,uint256) returns (bool)",
@@ -54,15 +64,15 @@ const TOKEN_ABI = [
 ];
 
 const plans = [
-  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "0.50% profit + 0.50% capital release = 1.00% per Monday–Friday earning day." },
-  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, days: "200 earning days · Mon–Fri", color: "blue", index: 1, copy: "0.55% profit + 0.55% capital release = 1.10% per Monday–Friday earning day." },
-  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, days: "200 earning days · Mon–Fri", color: "purple", index: 2, copy: "0.60% profit + 0.60% capital release = 1.20% per Monday–Friday earning day." },
-  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, days: "200 earning days · Mon–Fri", color: "green", index: 3, copy: "0.65% profit + 0.65% capital release = 1.30% per Monday–Friday earning day." }
+  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, earningDays: 200, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "1.00% total per earning day until the position reaches its 2× payout cap." },
+  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, earningDays: 182, days: "≈182 earning days · Mon–Fri", color: "blue", index: 1, copy: "1.10% total per earning day until the position reaches its 2× payout cap." },
+  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, earningDays: 167, days: "≈167 earning days · Mon–Fri", color: "purple", index: 2, copy: "1.20% total per earning day until the position reaches its 2× payout cap." },
+  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, earningDays: 154, days: "≈154 earning days · Mon–Fri", color: "green", index: 3, copy: "1.30% total per earning day until the position reaches its 2× payout cap." }
 ];
 
 const levels = [10, 5, 4, 3, 3, 3, 2, 2, 1, 1, 2, 2, 3, 4, 5];
-const fmt = (value, maximumFractionDigits = 2) => Number(value || 0).toLocaleString("en-US", { maximumFractionDigits, minimumFractionDigits: maximumFractionDigits });
-const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "Connect wallet";
+
+const walletErrorCodeIsNetwork = (error) => error?.code === "WRONG_NETWORK";
 
 const friendlyError = (error) => {
   if (error?.code === "ACTION_REJECTED") return "Transaction cancelled in your wallet.";
@@ -89,38 +99,63 @@ function App() {
   const [referrer, setReferrer] = useState(LINK_REFERRER);
   const [leg, setLeg] = useState(LINK_LEG);
   const [split, setSplit] = useState(0);
-  const [data, setData] = useState({ balance: "0", pending: "0", business: "0", referralEarnings: "0", level: 0, member: null, positions: [], directA: ZERO, directB: ZERO });
+  const [registrationMode, setRegistrationMode] = useState(0);
+  const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, level: 0, member: null, positions: [], directA: ZERO, directB: ZERO });
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [registrationStage, setRegistrationStage] = useState("idle");
+  const [registrationError, setRegistrationError] = useState("");
+  const [registrationTx, setRegistrationTx] = useState("");
+  const [placementReady, setPlacementReady] = useState(false);
+  const [placementError, setPlacementError] = useState("");
+  // The inviter can come from the link, from storage, or be pasted into the join window later.
+  const [inviter, setInviterState] = useState({ ref: LINK_REFERRER, leg: LINK_LEG });
+  const inviterRef = useRef(inviter);
+  const setInviter = (next) => { inviterRef.current = next; setInviterState(next); };
+  const [joinFee, setJoinFee] = useState(null);
+  const [walletChecked, setWalletChecked] = useState(false);
+  const [walletProvider, setWalletProvider] = useState(null);
+  const [connectStage, setConnectStage] = useState("idle");
+  const [connectError, setConnectError] = useState("");
+  const wallets = useWallets();
+  const walletsRef = useRef(wallets);
+  walletsRef.current = wallets;
+  const autoOpened = useRef(false);
   const isConfigured = ethers.isAddress(CONTRACT_ADDRESS) && ethers.isAddress(TOKEN_ADDRESS);
 
   const signerContract = async () => new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, await provider.getSigner());
+  // Breadth-first search for the next open slot, querying each tree level in parallel.
   const findOpenPlacement = async (reader, startingSponsor = "") => {
-    const root = startingSponsor || await reader.owner();
-    const queue = [root];
+    let level = [startingSponsor || await reader.owner()];
     const visited = new Set();
-    while (queue.length && visited.size < 512) {
-      const sponsor = queue.shift();
-      const key = sponsor.toLowerCase();
-      if (visited.has(key)) continue;
-      visited.add(key);
-      const [legA, legB] = await Promise.all([reader.directLeg(sponsor, 0), reader.directLeg(sponsor, 1)]);
-      if (legA === ZERO) return { referrer: sponsor, leg: 0 };
-      if (legB === ZERO) return { referrer: sponsor, leg: 1 };
-      queue.push(legA, legB);
+    while (level.length && visited.size < 512) {
+      level = level.filter(sponsor => {
+        const key = sponsor.toLowerCase();
+        if (sponsor === ZERO || visited.has(key)) return false;
+        visited.add(key);
+        return true;
+      });
+      const legs = await Promise.all(level.map(sponsor => Promise.all([reader.directLeg(sponsor, 0), reader.directLeg(sponsor, 1)])));
+      for (let i = 0; i < level.length; i++) {
+        if (legs[i][0] === ZERO) return { referrer: level[i], leg: 0 };
+        if (legs[i][1] === ZERO) return { referrer: level[i], leg: 1 };
+      }
+      level = legs.flat();
     }
     throw new Error("No open sponsor placement is currently available.");
   };
 
   const selectRegistrationPlacement = async (reader) => {
-    if (LINK_REFERRER) {
+    const { ref: inviteRef, leg: inviteLeg } = inviterRef.current;
+    if (inviteRef) {
       const [sponsor, legA, legB] = await Promise.all([
-        reader.members(LINK_REFERRER), reader.directLeg(LINK_REFERRER, 0), reader.directLeg(LINK_REFERRER, 1)
+        reader.members(inviteRef), reader.directLeg(inviteRef, 0), reader.directLeg(inviteRef, 1)
       ]);
-      if (!sponsor.registered) throw new Error("This referral link does not belong to a registered sponsor.");
-      const preferredOccupant = LINK_LEG === 0 ? legA : legB;
-      const alternateOccupant = LINK_LEG === 0 ? legB : legA;
-      if (preferredOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG };
-      if (alternateOccupant === ZERO) return { referrer: LINK_REFERRER, leg: LINK_LEG === 0 ? 1 : 0 };
-      return findOpenPlacement(reader, LINK_REFERRER);
+      if (!sponsor.registered) throw new Error("This invite link doesn't belong to an active member. Ask your sponsor to check their link.");
+      const preferredOccupant = inviteLeg === 0 ? legA : legB;
+      const alternateOccupant = inviteLeg === 0 ? legB : legA;
+      if (preferredOccupant === ZERO) return { referrer: inviteRef, leg: inviteLeg };
+      if (alternateOccupant === ZERO) return { referrer: inviteRef, leg: inviteLeg === 0 ? 1 : 0 };
+      return findOpenPlacement(reader, inviteRef);
     }
     if (ethers.isAddress(referrer) && referrer !== ZERO) {
       const [sponsor, occupant] = await Promise.all([reader.members(referrer), reader.directLeg(referrer, leg)]);
@@ -135,56 +170,242 @@ function App() {
       const reader = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, activeProvider);
       const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, activeProvider);
       const referralTotalPromise = reader.referralEarnings(activeAccount).catch(() => 0n);
-      const [member, pending, business, referralTotal, level, positions, balance, directA, directB] = await Promise.all([
+      const rewardModePromise = reader.rewardMode(activeAccount).catch(() => 0n);
+      const [member, pending, business, referralTotal, memberRewardMode, level, positions, balance, directA, directB, gas] = await Promise.all([
         reader.members(activeAccount), reader.pendingRoi(activeAccount), reader.balancedBusiness(activeAccount),
-        referralTotalPromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount),
-        token.balanceOf(activeAccount), reader.directLeg(activeAccount, 0), reader.directLeg(activeAccount, 1)
+        referralTotalPromise, rewardModePromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount),
+        token.balanceOf(activeAccount), reader.directLeg(activeAccount, 0), reader.directLeg(activeAccount, 1),
+        activeProvider.getBalance(activeAccount).catch(() => null)
       ]);
-      setData({ member, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), level: Number(level), positions, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
+      if (member.registered) storage.clear();
+      setData({ member, gas, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), rewardMode: Number(memberRewardMode), level: Number(level), positions, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
       if (!member.registered) {
-        const placement = await selectRegistrationPlacement(reader);
-        setReferrer(placement.referrer);
-        setLeg(placement.leg);
+        setPlacementReady(false);
+        try {
+          const placement = await selectRegistrationPlacement(reader);
+          setReferrer(placement.referrer);
+          setLeg(placement.leg);
+          setPlacementError("");
+        } catch (error) { setPlacementError(friendlyError(error)); }
+        finally { setPlacementReady(true); }
       }
+      return member;
     } catch (error) { setNotice(friendlyError(error)); }
   };
 
-  const connect = async () => {
-    if (!window.ethereum) return setNotice("Install a browser wallet such as MetaMask to continue.");
+  // Silently restore a previously authorized wallet so returning visitors skip the connect prompt.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const list = walletsRef.current;
+        const remembered = list.find(wallet => wallet.id === lastWallet()) || list[0];
+        if (!remembered) return;
+        const eth = remembered.provider;
+        const [accounts, chainId] = await Promise.all([eth.request({ method: "eth_accounts" }), eth.request({ method: "eth_chainId" })]);
+        if (cancelled || !accounts?.[0]) return;
+        setWalletProvider(eth);
+        if (!isOnTestnet(chainId)) { setConnectError("Your wallet is on a different network. Switch to BSC Testnet to continue."); return; }
+        const restored = new ethers.BrowserProvider(eth);
+        setProvider(restored); setAccount(accounts[0]);
+        await load(restored, accounts[0]);
+      } catch {} finally { if (!cancelled) setWalletChecked(true); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
+
+  // Invited visitors land straight in the registration flow.
+  useEffect(() => {
+    if (autoOpened.current || !AUTO_OPEN_REGISTRATION || !walletChecked) return;
+    if (account && !data.member) return;
+    autoOpened.current = true;
+    if (!data.member?.registered) setRegistrationOpen(true);
+  }, [walletChecked, account, data.member]);
+
+  const openRegistration = useCallback(() => {
+    setRegistrationError("");
+    setRegistrationStage(stage => (stage === "error" ? "idle" : stage));
+    setRegistrationOpen(true);
+  }, []);
+  const closeRegistration = useCallback(() => setRegistrationOpen(false), []);
+
+  const registerMember = async (session) => {
+    const activeProvider = session?.provider || provider;
+    const activeAccount = session?.account || account;
+    if (!activeAccount) return connectAndRegister();
+    if (!isConfigured) return;
+    setBusy(true); setRegistrationError(""); setRegistrationTx("");
     try {
-      const currentChain = await window.ethereum.request({ method: "eth_chainId" });
-      if (currentChain !== BSC_TESTNET_CHAIN_ID) {
+      const signer = await activeProvider.getSigner();
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, signer);
+      // No gas yet: show the faucet and resume automatically once tBNB arrives.
+      if ((await activeProvider.getBalance(activeAccount)) === 0n) { setRegistrationStage("gas"); return; }
+      // If someone takes the chosen slot first, pick the next open one and retry automatically.
+      for (let attempt = 0; ; attempt++) {
+        setRegistrationStage("placing");
+        const placement = await selectRegistrationPlacement(contract);
+        setReferrer(placement.referrer); setLeg(placement.leg);
+        const args = [placement.referrer, placement.leg, split, registrationMode];
         try {
-          await window.ethereum.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: BSC_TESTNET_CHAIN_ID }]
-          });
-        } catch (switchError) {
-          if (switchError.code !== 4902) throw switchError;
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [BSC_TESTNET]
-          });
+          await contract.registerWithMode.estimateGas(...args);
+          setRegistrationStage("wallet");
+          const tx = await contract.registerWithMode(...args);
+          setRegistrationTx(tx.hash);
+          setRegistrationStage("mining");
+          await tx.wait();
+          break;
+        } catch (error) {
+          if (error?.code === "ACTION_REJECTED") throw error;
+          const revertName = error?.revert?.name;
+          const nowRegistered = await contract.members(activeAccount).then(member => member.registered).catch(() => false);
+          if (revertName === "AlreadyRegistered" || nowRegistered) break;
+          const placementTaken = revertName === "LegOccupied" || revertName === "InvalidReferrer" || (error?.code === "CALL_EXCEPTION" && error?.receipt);
+          if (placementTaken && attempt < 2) continue;
+          throw error;
         }
       }
-      const nextProvider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await nextProvider.send("eth_requestAccounts", []);
-      setProvider(nextProvider); setAccount(accounts[0]); setNotice("");
-      await load(nextProvider, accounts[0]);
-    } catch (error) { setNotice(friendlyError(error)); }
+      storage.clear();
+      if (QUERY_REFERRER) window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+      setRegistrationStage("done");
+      await load(activeProvider, activeAccount);
+    } catch (error) {
+      setRegistrationStage("error");
+      setRegistrationError(friendlyError(error));
+    } finally { setBusy(false); }
+  };
+
+  // Accepts a full referral link or a plain wallet address typed/pasted by the visitor.
+  const applyInvite = async (input) => {
+    const text = (input || "").trim();
+    if (!text) { setInviter({ ref: "", leg: 0 }); storage.clear(); setPlacementError(""); await refreshPlacement(); return ""; }
+    let ref = text; let nextLeg = 0;
+    try {
+      const url = new URL(text);
+      ref = url.searchParams.get("ref") || ""; nextLeg = url.searchParams.get("leg") === "1" ? 1 : 0;
+    } catch {}
+    if (!ethers.isAddress(ref)) return "That doesn't look like an invite link or wallet address. Copy the full link your sponsor sent you.";
+    if (account && ref.toLowerCase() === account.toLowerCase()) return "You can't invite yourself. Use your sponsor's link.";
+    if (isConfigured) {
+      const reader = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, provider || ethers.getDefaultProvider(BSC_RPC));
+      const sponsor = await reader.members(ref).catch(() => null);
+      if (sponsor && !sponsor.registered) return "This address isn't an active member yet. Double-check the link with your sponsor.";
+    }
+    const next = { ref: ethers.getAddress(ref), leg: nextLeg };
+    setInviter(next); storage.set(next);
+    await refreshPlacement();
+    return "";
+  };
+
+  const refreshPlacement = async () => {
+    if (!provider || !isConfigured) return;
+    setPlacementReady(false);
+    try {
+      const placement = await selectRegistrationPlacement(new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, provider));
+      setReferrer(placement.referrer); setLeg(placement.leg); setPlacementError("");
+    } catch (error) { setPlacementError(friendlyError(error)); }
+    finally { setPlacementReady(true); }
+  };
+
+  // Let people pick a different account without disconnecting (wallets that support it show their account picker).
+  const switchAccount = async () => {
+    try { await walletProvider?.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] }); } catch {}
+  };
+
+  // Show the real network fee before anyone clicks Join.
+  useEffect(() => {
+    setJoinFee(null);
+    if (!registrationOpen || !provider || !account || !placementReady || placementError || data.member?.registered || !isConfigured) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, await provider.getSigner());
+        const [gas, fees] = await Promise.all([
+          contract.registerWithMode.estimateGas(referrer, leg, split, registrationMode),
+          provider.getFeeData()
+        ]);
+        const price = fees.gasPrice || fees.maxFeePerGas || 0n;
+        if (!cancelled) setJoinFee(gas * price);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [registrationOpen, provider, account, placementReady, placementError, referrer, leg, split, registrationMode, data.member]);
+
+  const connect = async (chosen) => {
+    const list = walletsRef.current;
+    const eth = chosen?.request ? chosen : walletProvider || (list.length === 1 ? list[0].provider : null);
+    // No wallet, or several to pick from: the registration window guides the visitor.
+    if (!eth) { setConnectError(""); setRegistrationOpen(true); return; }
+    setConnectError("");
+    try {
+      const nextAccount = await requestAccount(eth, setConnectStage);
+      const match = list.find(wallet => wallet.provider === eth);
+      if (match) rememberWallet(match.id);
+      setConnectStage("loading");
+      const nextProvider = new ethers.BrowserProvider(eth);
+      setWalletProvider(eth); setProvider(nextProvider); setAccount(nextAccount); setNotice("");
+      const member = await load(nextProvider, nextAccount);
+      return { provider: nextProvider, account: nextAccount, member };
+    } catch (error) {
+      if (walletErrorCodeIsNetwork(error)) setWalletProvider(eth);
+      setConnectError(connectErrorMessage(error));
+      if (!registrationOpen) setNotice(connectErrorMessage(error));
+      return null;
+    } finally { setConnectStage("idle"); }
+  };
+
+  // One tap: connect, switch network and register without stopping in between.
+  const connectAndRegister = async (chosen) => {
+    const session = account && provider ? { provider, account } : await connect(chosen);
+    if (!session || session.member?.registered) return;
+    await registerMember(session);
+  };
+
+  // While waiting for faucet gas, poll the balance and continue registration by itself.
+  useEffect(() => {
+    if (registrationStage !== "gas" || !provider || !account) return;
+    let stopped = false;
+    const timer = setInterval(async () => {
+      const balance = await provider.getBalance(account).catch(() => 0n);
+      if (stopped || balance === 0n) return;
+      stopped = true; clearInterval(timer);
+      setData(current => ({ ...current, gas: balance }));
+      registerMember({ provider, account });
+    }, 5000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [registrationStage, provider, account]);
+
+  const switchNetwork = async () => {
+    if (!walletProvider) return connect();
+    return connect(walletProvider);
   };
 
   useEffect(() => {
-    if (!window.ethereum) return;
-    const changed = (accounts) => { setAccount(accounts[0] || ""); if (accounts[0]) load(provider, accounts[0]); };
-    const chainChanged = () => window.location.reload();
-    window.ethereum.on?.("accountsChanged", changed);
-    window.ethereum.on?.("chainChanged", chainChanged);
-    return () => {
-      window.ethereum.removeListener?.("accountsChanged", changed);
-      window.ethereum.removeListener?.("chainChanged", chainChanged);
+    const eth = walletProvider;
+    if (!eth?.on) return;
+    const refresh = async () => {
+      try {
+        const [accounts, chainId] = await Promise.all([eth.request({ method: "eth_accounts" }), eth.request({ method: "eth_chainId" })]);
+        setRegistrationStage("idle"); setRegistrationError("");
+        if (!accounts?.[0]) { setAccount(""); setProvider(null); return; }
+        if (!isOnTestnet(chainId)) {
+          setAccount(""); setProvider(null);
+          setConnectError("Your wallet switched to a different network. Switch back to BSC Testnet to continue.");
+          return;
+        }
+        setConnectError("");
+        const nextProvider = new ethers.BrowserProvider(eth);
+        setProvider(nextProvider); setAccount(accounts[0]);
+        await load(nextProvider, accounts[0]);
+      } catch {}
     };
-  }, [provider]);
+    // Rebuild in place instead of reloading the page, so a network switch mid-connect never loses progress.
+    eth.on("accountsChanged", refresh);
+    eth.on("chainChanged", refresh);
+    return () => {
+      eth.removeListener?.("accountsChanged", refresh);
+      eth.removeListener?.("chainChanged", refresh);
+    };
+  }, [walletProvider]);
 
   useEffect(() => {
     const onHashChange = () => setRoute(window.location.hash === "#/dashboard" ? "dashboard" : "home");
@@ -192,7 +413,7 @@ function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  const transact = async (kind) => {
+  const transact = async (kind, arg) => {
     if (!account) return connect();
     if (!isConfigured) return setNotice("Add VITE_VANTEX_ADDRESS and VITE_TOKEN_ADDRESS to enable transactions.");
     setBusy(true); setNotice("");
@@ -202,11 +423,6 @@ function App() {
       if (kind === "mint") {
         const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, await provider.getSigner());
         tx = await token.mint(account, ethers.parseUnits("10000", TOKEN_DECIMALS));
-      } else if (kind === "register") {
-        const placement = await selectRegistrationPlacement(contract);
-        setReferrer(placement.referrer);
-        setLeg(placement.leg);
-        tx = await contract.register(placement.referrer, placement.leg, split);
       } else if (kind === "invest") {
         const value = ethers.parseUnits(amount || "0", TOKEN_DECIMALS);
         const signer = await provider.getSigner();
@@ -226,7 +442,7 @@ function App() {
           if (!currentMember.registered) {
             placement = await selectRegistrationPlacement(contract);
             setNotice("Current testnet contracts require registration confirmation…");
-            const registration = await contract.register(placement.referrer, placement.leg, split);
+            const registration = await contract.registerWithMode(placement.referrer, placement.leg, split, registrationMode);
             await registration.wait();
           }
           const allowance = await token.allowance(account, CONTRACT_ADDRESS);
@@ -263,7 +479,7 @@ function App() {
           const placement = await selectRegistrationPlacement(contract);
           setReferrer(placement.referrer);
           setLeg(placement.leg);
-          tx = await contract.registerAndInvestWithPermit(placement.referrer, placement.leg, split, value, selectedPlan, deadline, v, r, s);
+          tx = await contract.registerAndInvestWithPermitAndMode(placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, deadline, v, r, s);
         }
       } else if (kind === "compoundRoi") {
         const pendingAmount = Number(data.pending);
@@ -274,10 +490,20 @@ function App() {
             : "Claimable ROI above $2,500 cannot be compounded into a single position. Claim it to your wallet instead.");
         }
         tx = await contract.compoundRoi(compoundPlan.index);
+      } else if (kind === "setRewardMode") {
+        tx = await contract.setRewardMode(arg);
       }
       else tx = await contract[kind]();
       setNotice("Transaction submitted. Waiting for confirmation…");
-      await tx.wait(); setNotice("Transaction confirmed on-chain."); await load();
+      await tx.wait();
+      setNotice({
+        mint: "10,000 test mUSDT added to your wallet.",
+        claimRoi: "Rewards claimed to your wallet.",
+        compoundRoi: "Rewards compounded into a new position.",
+        claimSalary: "Salary claimed to your wallet.",
+        setRewardMode: arg === 1 ? "Auto Compound is on. Rewards will be reinvested." : "Rewards will now be paid to your wallet."
+      }[kind] || "Transaction confirmed.");
+      await load();
     } catch (error) { setNotice(friendlyError(error)); }
     finally { setBusy(false); }
   };
@@ -297,9 +523,8 @@ function App() {
   };
 
   const projected = useMemo(() => {
-    const plan = plans[selectedPlan];
-    return Number(amount || 0) * plan.rateValue / 100 * 200;
-  }, [amount, selectedPlan]);
+    return Number(amount || 0) * 2;
+  }, [amount]);
 
   const compoundPlan = plans.find(plan => Number(data.pending) >= plan.min && Number(data.pending) <= plan.max) || null;
 
@@ -318,95 +543,45 @@ function App() {
       : "Referral link copied. New members will use the next open position in your organization.");
   };
 
-  if (route === "dashboard") return <Dashboard {...{
+  const startFirstPosition = () => {
+    setRegistrationOpen(false);
+    setRegistrationStage("idle");
+    window.location.hash = "/dashboard"; setRoute("dashboard");
+    setTimeout(() => document.getElementById("new-position")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
+
+  const wizard = <RegistrationWizard
+    open={registrationOpen} onClose={closeRegistration} account={account} connect={connect}
+    isConfigured={isConfigured} registered={Boolean(data.member?.registered)}
+    stage={registrationStage} error={registrationError} txHash={registrationTx}
+    onRegister={() => registerMember()} onContinue={connectAndRegister}
+    registrationMode={registrationMode} setRegistrationMode={setRegistrationMode}
+    sponsor={referrer} leg={leg} linkReferrer={inviter.ref} onApplyInvite={applyInvite}
+    joinFee={joinFee} onSwitchAccount={switchAccount}
+    placementReady={placementReady} placementError={placementError} gasBalance={data.gas}
+    referralLink={referralLink} copyReferralLink={copyReferralLink} onInvest={startFirstPosition}
+    wallets={wallets} connectStage={connectStage} connectError={connectError}
+    wrongNetwork={Boolean(walletProvider) && !account} onSwitchNetwork={switchNetwork}
+  />;
+
+  if (route === "dashboard") return <><Dashboard {...{
     account, connect, data, notice, busy, isConfigured, plans, selectedPlan,
     setSelectedPlan: selectPlan, amount, setAmount: changeAmount, projected, transact, referrer,
-    setReferrer, leg, setLeg, split, setSplit, referralLink, copyReferralLink, linkReferrer: LINK_REFERRER,
-    compoundPlan
-  }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>;
+    setReferrer, leg, setLeg, split, setSplit, registrationMode, setRegistrationMode,
+    referralLink, copyReferralLink, linkReferrer: inviter.ref,
+    compoundPlan, openRegistration, levels,
+    refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount
+  }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>{wizard}</>;
 
-  return <div className="app">
-    <nav className="nav wrap">
-      <a className="brand" href="#top"><span className="mark">V</span><span>VANTEX<small>CAPITAL</small></span></a>
-      <div className="navlinks"><a href="#plans">Plans</a><a href="#network">Network</a><button onClick={openDashboard}>Dashboard</button></div>
-      <button className="wallet-btn" onClick={connect}><Wallet size={17}/>{short(account)}</button>
-    </nav>
+  const startInvesting = () => {
+    window.location.hash = "/dashboard"; setRoute("dashboard");
+    setTimeout(() => document.getElementById("new-position")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
 
-    <main id="top">
-      <section className="hero wrap">
-        <div className="hero-copy">
-          <div className="eyebrow"><Sparkles size={14}/> Stablecoin-powered · On-chain accounting</div>
-          <h1>Build your capital.<br/><em>Grow your network.</em></h1>
-          <p>A transparent dashboard for the Vantex Capital plan—investment terms, Monday–Friday accrual, referral rewards and business milestones in one place.</p>
-          <div className="hero-actions"><button className="primary" onClick={openDashboard}>Open dashboard <ArrowUpRight size={18}/></button><a className="text-link" href="#plans">Explore plans <ChevronRight size={18}/></a></div>
-          <div className="trust-row"><span><ShieldCheck/>Auditable rules</span><span><Clock3/>Daily accrual</span><span><Network/>15 levels</span></div>
-        </div>
-        <div className="hero-visual">
-          <div className="orb orb-one"/><div className="orb orb-two"/>
-          <div className="growth-card glass">
-            <span className="micro">PROJECTED PLAN VALUE</span><strong>${fmt(Number(amount) + projected)}</strong>
-            <div className="chart"><i/><i/><i/><i/><i/><i/><i/></div>
-            <div className="growth-foot"><span>Principal ${fmt(amount)}</span><b>+${fmt(projected)} accrual</b></div>
-          </div>
-          <div className="float-card"><Crown/><span>PACKAGE 4 TOTAL<strong>1.30% Mon–Fri</strong></span></div>
-        </div>
-      </section>
-
-      <section className="ticker"><div>TRADE <b>◆</b> INVEST <b>◆</b> GROW <b>◆</b> COMPOUND <b>◆</b> BUILD <b>◆</b> TRADE <b>◆</b> INVEST</div></section>
-
-      <section id="plans" className="section wrap">
-        <div className="section-head"><div><div className="eyebrow">Investment packages</div><h2>Choose your pace.</h2></div><p>Four paths, one auditable accrual engine. All positions have a defined maximum term.</p></div>
-        <div className="plan-grid">{plans.map((plan) => <article key={plan.name} className={`plan-card ${plan.color} ${selectedPlan === plan.index ? "active" : ""}`} onClick={() => selectPlan(plan.index)}>
-          <div className="plan-top"><span>{plan.name}</span>{plan.index === 2 && <b>POPULAR</b>}</div>
-          <h3>{plan.rate}</h3><small>profit per earning day</small><div className="divider"/>
-          <strong>{plan.label}</strong>
-          <p>{plan.days}. {plan.copy}</p><button>Select package <ArrowUpRight size={16}/></button>
-        </article>)}</div>
-        <div className="tier-strip"><span>Package profit rates</span><b>$1–$100 <i>0.50%</i></b><b>$101–$500 <i>0.55%</i></b><b>$501–$1,000 <i>0.60%</i></b><b>$1,001–$2,500 <i>0.65%</i></b></div>
-      </section>
-
-      <section id="network" className="network-section">
-        <div className="wrap network-grid">
-          <div><div className="eyebrow">ROI on ROI</div><h2>Fifteen levels.<br/>One connected system.</h2><p>Earn a percentage of claimed ROI across qualified network levels. Balanced A/B business unlocks deeper levels.</p>
-            <div className="split-card glass"><span>Choose your organization split</span><div><b>A <em>60%</em></b><i>or</i><b>B <em>60%</em></b></div><small>The opposite organization carries 40%.</small></div>
-          </div>
-          <div className="level-stack">{levels.map((rate, i) => <div key={i}><span>L{i+1}</span><i style={{width:`${rate*8}%`}}/><b>{rate}%</b></div>)}</div>
-        </div>
-      </section>
-
-      <section className="milestones wrap">
-        <div className="section-head"><div><div className="eyebrow">Business salary</div><h2>Momentum becomes income.</h2></div><p>Salary rewards run for six 15-day cycles after a balanced-business milestone is reached.</p></div>
-        <div className="salary-row">{[[1000,25],[2000,50],[5000,125],[10000,250],[20000,500]].map(([business, salary], i) => <div key={business}><span>0{i+1}</span><small>${business.toLocaleString()} business</small><strong>${salary}</strong><em>every 15 days × 6</em></div>)}</div>
-      </section>
-
-      <section id="dashboard" className="dashboard-section">
-        <div className="wrap">
-          <div className="dashboard-head"><div><div className="eyebrow">Investor console</div><h2>Your capital cockpit.</h2></div><button className="launch-dashboard" onClick={openDashboard}><LayoutDashboard size={17}/> Launch full dashboard <ArrowUpRight size={16}/></button></div>
-          {!isConfigured && <div className="config-note"><Zap size={18}/><span><b>Preview mode.</b> Set the two contract address environment variables after deployment to enable live reads and transactions.</span></div>}
-          {notice && <div className="notice">{notice}</div>}
-          {account && data.member && !data.member.registered && <div className="config-note registration-note"><ShieldCheck size={18}/><span><b>Registration available.</b> Activate your wallet now{LINK_REFERRER ? ` under sponsor ${short(LINK_REFERRER)}` : ""}, or register automatically with your first investment.</span><button disabled={busy} onClick={() => transact("register")}>{busy ? "Registering…" : "Register now"}</button></div>}
-          <div className="dashboard-grid">
-            <div className="stats-panel">
-              <div className="stat"><span><CircleDollarSign/>Wallet balance</span><strong>${fmt(data.balance)}</strong><small>USDT available</small></div>
-              <div className="stat accent"><span><BarChart3/>Claimable ROI</span><strong>${fmt(data.pending)}</strong><div className="stat-actions"><button disabled={busy || !account} onClick={() => transact("claimRoi")}>Claim rewards</button><button disabled={busy || !account || !compoundPlan} onClick={() => transact("compoundRoi")}>{compoundPlan ? `Compound into ${compoundPlan.name}` : "Compound unavailable"}</button></div></div>
-              <div className="stat"><span><Users/>Balanced business</span><strong>${fmt(data.business)}</strong><small>Qualified through level {data.level}</small></div>
-              <div className="stat"><span><Crown/>Salary rank</span><strong>{data.member ? Number(data.member.salaryRank) : 0}<i>/5</i></strong><button disabled={busy || !account} onClick={() => transact("claimSalary")}>Claim salary</button></div>
-            </div>
-            <div className="invest-panel">
-              <div className="invest-title"><span>New position</span><b>{plans[selectedPlan].name} plan</b></div>
-              <label>Deposit amount <span>USDT</span></label>
-              <div className="amount-input"><span>$</span><input type="number" min="1" max="2500" value={amount} onChange={e => changeAmount(e.target.value)}/><b>USDT</b></div>
-              <div className="quick">{[100,500,1000,2500].map(v => <button key={v} onClick={() => changeAmount(String(v))}>${v.toLocaleString()}</button>)}</div>
-              <div className="summary"><div><span>Daily profit</span><b>{plans[selectedPlan].rate}</b></div><div><span>Daily total incl. capital</span><b>{plans[selectedPlan].totalRate}</b></div><div><span>Term</span><b>{plans[selectedPlan].days}</b></div><div><span>Projected total payout</span><b className="gold">+${fmt(projected)}</b></div></div>
-              <button className="invest-button" disabled={busy} onClick={() => transact("invest")}>{busy ? "Processing…" : !account ? "Connect wallet to invest" : data.member?.registered ? "Authorize & invest" : "Register & invest"}<ArrowUpRight size={18}/></button>
-              <p className="fineprint">Projections are mathematical outputs of the contract terms, not a guarantee of profit. Review the contract and risks before transacting.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-    <footer className="wrap"><div className="brand"><span className="mark">V</span><span>VANTEX<small>CAPITAL</small></span></div><p>On-chain rules. Clear terms. Your decision.</p><span>© 2026 Vantex Capital</span></footer>
-  </div>;
+  return <><Home {...{
+    account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
+    isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting
+  }}/>{wizard}</>;
 }
 
 createRoot(document.getElementById("root")).render(<React.StrictMode><App/></React.StrictMode>);
