@@ -24,8 +24,16 @@ if (QUERY_REFERRER) storage.set({ ref: QUERY_REFERRER, leg: REFERRAL_PARAMS.get(
 const STORED_REFERRAL = storage.get();
 const LINK_REFERRER = QUERY_REFERRER || (ethers.isAddress(STORED_REFERRAL?.ref || "") ? STORED_REFERRAL.ref : "");
 const LINK_LEG = QUERY_REFERRER ? (REFERRAL_PARAMS.get("leg") === "1" ? 1 : 0) : (STORED_REFERRAL?.leg === 1 ? 1 : 0);
-const BSC_RPC = "https://data-seed-prebsc-1-s1.bnbchain.org:8545";
+// Used for read-only checks before a wallet is connected (e.g. verifying a referral link).
+const BSC_RPC = import.meta.env.VITE_READ_RPC || "https://data-seed-prebsc-1-s1.bnbchain.org:8545";
 const AUTO_OPEN_REGISTRATION = Boolean(QUERY_REFERRER) || REFERRAL_PARAMS.get("action") === "register";
+// Set by the "Open in MetaMask / Trust Wallet" deep links: connect as soon as the page opens inside the wallet app.
+const AUTO_CONNECT = REFERRAL_PARAMS.get("autoconnect") === "1";
+const clearAutoConnectParam = () => {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("autoconnect");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+};
 
 const VANTEX_ABI = [
   "error AlreadyRegistered()",
@@ -112,6 +120,7 @@ function App() {
   const inviterRef = useRef(inviter);
   const setInviter = (next) => { inviterRef.current = next; setInviterState(next); };
   const [joinFee, setJoinFee] = useState(null);
+  const [referrerSlots, setReferrerSlots] = useState(null);
   const [walletChecked, setWalletChecked] = useState(false);
   const [walletProvider, setWalletProvider] = useState(null);
   const [connectStage, setConnectStage] = useState("idle");
@@ -203,7 +212,9 @@ function App() {
         if (!remembered) return;
         const eth = remembered.provider;
         const [accounts, chainId] = await Promise.all([eth.request({ method: "eth_accounts" }), eth.request({ method: "eth_chainId" })]);
-        if (cancelled || !accounts?.[0]) return;
+        if (cancelled) return;
+        if (AUTO_CONNECT && (!accounts?.[0] || !isOnTestnet(chainId))) { clearAutoConnectParam(); await connect(eth); return; }
+        if (!accounts?.[0]) return;
         setWalletProvider(eth);
         if (!isOnTestnet(chainId)) { setConnectError("Your wallet is on a different network. Switch to BSC Testnet to continue."); return; }
         const restored = new ethers.BrowserProvider(eth);
@@ -274,27 +285,69 @@ function App() {
     } finally { setBusy(false); }
   };
 
-  // Accepts a full referral link or a plain wallet address typed/pasted by the visitor.
-  const applyInvite = async (input) => {
+  // Read-only contract access that also works before a wallet is connected.
+  const readContract = () => new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, provider || new ethers.JsonRpcProvider(BSC_RPC));
+
+  // Validates a referral link or a plain referrer wallet address without applying it.
+  // Returns { address, leg, slots } on success or { error } with a plain-language reason.
+  const checkReferrer = async (input) => {
     const text = (input || "").trim();
-    if (!text) { setInviter({ ref: "", leg: 0 }); storage.clear(); setPlacementError(""); await refreshPlacement(); return ""; }
-    let ref = text; let nextLeg = 0;
-    try {
-      const url = new URL(text);
-      ref = url.searchParams.get("ref") || ""; nextLeg = url.searchParams.get("leg") === "1" ? 1 : 0;
-    } catch {}
-    if (!ethers.isAddress(ref)) return "That doesn't look like an invite link or wallet address. Copy the full link your sponsor sent you.";
-    if (account && ref.toLowerCase() === account.toLowerCase()) return "You can't invite yourself. Use your sponsor's link.";
-    if (isConfigured) {
-      const reader = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, provider || ethers.getDefaultProvider(BSC_RPC));
-      const sponsor = await reader.members(ref).catch(() => null);
-      if (sponsor && !sponsor.registered) return "This address isn't an active member yet. Double-check the link with your sponsor.";
+    let ref = text; let linkLeg = 0;
+    if (/^https?:\/\//i.test(text)) {
+      try {
+        const url = new URL(text);
+        ref = url.searchParams.get("ref") || ""; linkLeg = url.searchParams.get("leg") === "1" ? 1 : 0;
+      } catch { return { error: "That link looks incomplete. Copy the full invite link again." }; }
+      if (!ref) return { error: "This link has no referrer in it. Ask your referrer for their invite link or wallet address." };
     }
-    const next = { ref: ethers.getAddress(ref), leg: nextLeg };
-    setInviter(next); storage.set(next);
+    if (!ethers.isAddress(ref)) {
+      return { error: /^0x[0-9a-f]*$/i.test(ref) && ref.length < 42
+        ? `Wallet addresses have 42 characters. This one has ${ref.length}.`
+        : "That isn't a valid wallet address. It should start with 0x." };
+    }
+    const address = ethers.getAddress(ref);
+    if (account && address.toLowerCase() === account.toLowerCase()) return { error: "That's your own wallet. Enter the address of the person who referred you." };
+    if (!isConfigured) return { address, leg: linkLeg, slots: null };
+    try {
+      const reader = readContract();
+      const [member, legA, legB] = await Promise.all([reader.members(address), reader.directLeg(address, 0), reader.directLeg(address, 1)]);
+      if (!member.registered) return { error: "This wallet isn't a Vantex member yet. Check the address with your referrer." };
+      return { address, leg: linkLeg, slots: { a: legA === ZERO, b: legB === ZERO } };
+    } catch {
+      return { error: "Couldn't check this address right now. Check your connection and try again.", retryable: true };
+    }
+  };
+
+  // Applies a referral link or referrer wallet address (empty input = no referrer, automatic placement).
+  const applyInvite = async (input, legChoice) => {
+    const text = (input || "").trim();
+    if (!text) { setInviter({ ref: "", leg: 0 }); setReferrerSlots(null); storage.clear(); setPlacementError(""); await refreshPlacement(); return ""; }
+    const result = await checkReferrer(text);
+    if (result.error) return result.error;
+    const next = { ref: result.address, leg: legChoice ?? result.leg };
+    setInviter(next); setReferrerSlots(result.slots); storage.set(next);
     await refreshPlacement();
     return "";
   };
+
+  // Lets the new member choose Organization A or B when their referrer has both spots open.
+  const chooseLeg = async (nextLeg) => {
+    if (!inviterRef.current.ref) return;
+    const next = { ...inviterRef.current, leg: nextLeg };
+    setInviter(next); storage.set(next);
+    await refreshPlacement();
+  };
+
+  // Keep the referrer's open A/B spots up to date (also for visitors who arrive through a link).
+  useEffect(() => {
+    if (!inviter.ref || !isConfigured) { setReferrerSlots(null); return; }
+    let cancelled = false;
+    const reader = readContract();
+    Promise.all([reader.directLeg(inviter.ref, 0), reader.directLeg(inviter.ref, 1)])
+      .then(([legA, legB]) => { if (!cancelled) setReferrerSlots({ a: legA === ZERO, b: legB === ZERO }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [inviter.ref, provider, registrationOpen]);
 
   const refreshPlacement = async () => {
     if (!provider || !isConfigured) return;
@@ -533,7 +586,7 @@ function App() {
   const hasOpenDirectLeg = data.directA === ZERO || data.directB === ZERO;
   const availableReferralLeg = data.directA === ZERO ? 0 : data.directB === ZERO ? 1 : 0;
   const referralLink = account && data.member?.registered
-    ? `${window.location.origin}${window.location.pathname}?ref=${account}&leg=${availableReferralLeg}&action=register#/dashboard`
+    ? `${window.location.origin}${window.location.pathname}?ref=${account}${availableReferralLeg === 1 ? "&leg=1" : ""}`
     : "";
   const copyReferralLink = async () => {
     if (!referralLink) return setNotice("Register this wallet before generating a referral link.");
@@ -557,6 +610,7 @@ function App() {
     onRegister={() => registerMember()} onContinue={connectAndRegister}
     registrationMode={registrationMode} setRegistrationMode={setRegistrationMode}
     sponsor={referrer} leg={leg} linkReferrer={inviter.ref} onApplyInvite={applyInvite}
+    onCheckReferrer={checkReferrer} referrerSlots={referrerSlots} preferredLeg={inviter.leg} onChooseLeg={chooseLeg}
     joinFee={joinFee} onSwitchAccount={switchAccount}
     placementReady={placementReady} placementError={placementError} gasBalance={data.gas}
     referralLink={referralLink} copyReferralLink={copyReferralLink} onInvest={startFirstPosition}
@@ -580,7 +634,7 @@ function App() {
 
   return <><Home {...{
     account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
-    isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting
+    isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting, referralLink
   }}/>{wizard}</>;
 }
 

@@ -1,9 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
-  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Coins, Crown, Gift, LayoutDashboard,
-  Menu, Network, ShieldCheck, Sparkles, TrendingUp, UserPlus, Users, Wallet, X
+  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Coins, Copy, Crown, Gift, LayoutDashboard, Link2,
+  Menu, MessageCircle, Network, QrCode, Send, Share2, ShieldCheck, Sparkles, TrendingUp, UserPlus, Users, Wallet, X
 } from "lucide-react";
+import Avatar from "./Avatar";
+import ReferralQr from "./ReferralQr";
 import "./home.css";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 const money = (value, digits = 2) => Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
@@ -20,11 +24,17 @@ const faqs = [
 
 export default function Home({
   account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
-  isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting
+  isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting, referralLink
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
   const [scrolled, setScrolled] = useState(false);
+  const [copied, setCopied] = useState("");
+  const [showQr, setShowQr] = useState(false);
+  const copy = async (text, key) => {
+    try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 1800); } catch {}
+  };
+  const shareText = "Join my team on Vantex Capital:";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -73,6 +83,41 @@ export default function Home({
         </div>
       </div>}
       {notice && <div className="hp-wrap"><div className="hp-notice">{notice}</div></div>}
+
+      {account && registered && referralLink && <div className="hp-wrap">
+        <section className="hp-ref" aria-label="Your referral link">
+          <div className="hp-ref-head">
+            <Avatar address={account} size={42}/>
+            <div><span className="hp-eyebrow"><Gift size={13}/> Your referral link is ready</span><h2>Invite people to your team</h2></div>
+            <div className="hp-ref-slots">
+              {[["A", data.directA], ["B", data.directB]].map(([side, occupant]) => <span key={side} className={occupant === ZERO ? "open" : ""}>
+                {occupant === ZERO ? <UserPlus size={13}/> : <Check size={13}/>} Organization {side}: {occupant === ZERO ? "Open" : "Filled"}
+              </span>)}
+            </div>
+          </div>
+          <div className="hp-ref-row">
+            <div className="hp-ref-field"><Link2 size={16}/><input readOnly value={referralLink} onFocus={event => event.target.select()} aria-label="Your referral link"/></div>
+            <button className="hp-btn gold" onClick={() => copy(referralLink, "link")}>{copied === "link" ? <><Check size={16}/> Copied</> : <><Copy size={16}/> Copy link</>}</button>
+          </div>
+          <div className="hp-ref-actions">
+            <a href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${referralLink}`)}`} target="_blank" rel="noreferrer"><MessageCircle size={15}/> WhatsApp</a>
+            <a href={`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer"><Send size={15}/> Telegram</a>
+            {typeof navigator !== "undefined" && navigator.share && <button onClick={() => navigator.share({ title: "Vantex Capital", text: shareText, url: referralLink }).catch(() => {})}><Share2 size={15}/> More</button>}
+            <button onClick={() => setShowQr(true)}><QrCode size={15}/> QR code</button>
+            <button onClick={() => copy(account, "addr")}>{copied === "addr" ? <><Check size={15}/> Address copied</> : <><Wallet size={15}/> Copy wallet address</>}</button>
+            <button className="hp-ref-dash" onClick={openDashboard}>Team dashboard <ArrowUpRight size={15}/></button>
+          </div>
+          <p className="hp-ref-note">New members can open your link, scan your QR code, or enter your wallet address in the join window.</p>
+        </section>
+        {showQr && <ReferralQr link={referralLink} address={account} onClose={() => setShowQr(false)}/>}
+      </div>}
+
+      {account && data.member && !registered && !linkReferrer && <div className="hp-wrap">
+        <div className="hp-invite hp-unlock">
+          <Link2 size={18}/><span><b>Wallet connected.</b> Join to unlock your personal referral link.</span>
+          <button className="hp-btn gold small" onClick={openRegistration}>Join now <ArrowRight size={15}/></button>
+        </div>
+      </div>}
 
       <section className="hp-hero hp-wrap">
         <div className="hp-hero-copy">

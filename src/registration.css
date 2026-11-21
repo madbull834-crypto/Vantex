@@ -181,3 +181,51 @@
 .reg-plan-choices button b{font-size:15px}
 .reg-plan-choices button span{line-height:1.45}
 .reg-plan-check{position:absolute;top:12px;right:12px;color:#b1883e}
+/* Referrer entry */
+.reg-ref-editor{display:grid;gap:8px;padding:14px;border-radius:14px;background:#fbfaf6;border:1px solid #ece3cf}
+.reg-segment{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:11px;background:#f0ece2}
+.reg-segment button{display:flex;align-items:center;justify-content:center;gap:6px;height:36px;border:0;border-radius:8px;background:none;color:#6f6450;font-size:13px!important;font-weight:700;cursor:pointer}
+.reg-segment button.active{background:#fff;color:#1d2a33;box-shadow:0 1px 3px #0000001a}
+.reg-ref-input{display:flex;align-items:center;gap:6px;height:48px;padding:0 6px 0 14px;border-radius:12px;background:#fff;border:1.5px solid #dcd6c6;transition:border-color .15s,box-shadow .15s}
+.reg-ref-input:focus-within{border-color:#d2aa59;box-shadow:0 0 0 3px #f2d79a55}
+.reg-ref-input.valid{border-color:#3aa26a}
+.reg-ref-input.invalid{border-color:#d9776b}
+.reg-ref-input input{flex:1;min-width:0;border:0;outline:0;background:none;font-size:14px!important;color:#1d2a33;font-family:ui-monospace,SFMono-Regular,Menlo,monospace!important}
+.reg-ref-input input::placeholder{font-family:"DM Sans",sans-serif;color:#9aa5ad}
+.reg-ref-paste{display:flex;align-items:center;gap:5px;height:36px;padding:0 12px;border:0;border-radius:9px;background:#17242d;color:#fff;font-size:12px!important;font-weight:700;cursor:pointer}
+.reg-ref-clear{width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:#f2f4f5;color:#5f6c76;cursor:pointer}
+.reg-ref-status{min-height:18px;font-size:12px;line-height:1.45;color:#7c8992}
+.reg-ref-status span{display:flex;align-items:flex-start;gap:6px}
+.reg-ref-status svg{flex:none;margin-top:1px}
+.reg-ref-status .checking svg{animation:reg-spin 1s linear infinite}
+.reg-ref-status .ok{color:#2f8b58;font-weight:700}
+.reg-ref-status .bad{color:#a8443a}
+.reg-ref-actions{display:flex;justify-content:space-between;gap:12px}
+.reg-sponsor-card.stack{flex-direction:column;align-items:stretch;gap:10px}
+.reg-sponsor-row{display:flex;align-items:center;gap:12px}
+.reg-sponsor-row>div{flex:1;min-width:0;display:grid;gap:3px}
+.reg-sponsor-row>div>span{font-size:12.5px;line-height:1.45;color:#7a6326}
+.reg-badge svg{color:#3aa26a}
+.reg-sides{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.reg-sides button{display:grid;gap:2px;padding:10px 12px;border-radius:11px;border:1.5px solid #ecdcb3;background:#fffdf7;text-align:left;cursor:pointer;color:#3d2f0c}
+.reg-sides button b{font-size:13px}
+.reg-sides button span{font-size:11px;color:#3aa26a;font-weight:700}
+.reg-sides button.active{border-color:#c99a3c;background:#fff4d9;box-shadow:inset 0 0 0 1px #c99a3c}
+.reg-sides button.taken span{color:#a3998a}
+.reg-sides button:disabled{cursor:default}
+.reg-sides button.taken{opacity:.6}
+.reg-spill{font-size:12px;color:#7a6326}
+.reg-sponsor-card .reg-text-btn{justify-self:start;padding:0}
+@media(max-width:560px){.reg-segment button{font-size:12px!important}.reg-ref-actions{flex-direction:column;gap:4px}}
+.reg-sponsor-card>.reg-sponsor-row{display:flex;flex:none;align-items:center;gap:12px}
+.reg-sponsor-row .reg-badge{align-self:center}
+/* Share right after joining */
+.reg-share{width:100%;display:grid;gap:8px;margin-top:8px;padding:13px 14px;border:1px solid #e1e5e7;border-radius:12px;text-align:left}
+.reg-share-head{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:center}
+.reg-share-head>span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#f2f4f5;color:#5f6c76;font-size:12px;font-weight:800}
+.reg-share-head div{display:grid;gap:2px}
+.reg-share-head b{font-size:14px;color:#1d2a33}
+.reg-share-head small{font-size:12px;color:#8a96a0}
+.reg-share-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.reg-share-row a,.reg-share-row button{display:flex;align-items:center;justify-content:center;gap:6px;height:38px;border-radius:9px;border:1px solid #e1e5e7;background:#fafbfb;color:#1d2a33;font-size:13px!important;font-weight:700;text-decoration:none;cursor:pointer}
+.reg-share-row a:hover,.reg-share-row button:hover{border-color:#d2aa59}

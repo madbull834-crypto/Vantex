@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ethers } from "ethers";
 import "./dashboard.css";
 import Avatar from "./Avatar";
+import ReferralQr from "./ReferralQr";
 import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, BadgeDollarSign, BriefcaseBusiness, Check,
   ChevronDown, CircleAlert, CircleCheck, Coins, Copy, Crown, ExternalLink, Gift, LayoutDashboard, Link2,
-  Lock, MessageCircle, Network, Plus, RefreshCw, Repeat, Send, Share2, Sparkles, TrendingUp, Unlock,
+  Lock, MessageCircle, Network, Plus, QrCode, RefreshCw, Repeat, Send, Share2, Sparkles, TrendingUp, Unlock,
   UserPlus, Users, Wallet, X
 } from "lucide-react";
 
@@ -62,6 +63,7 @@ export default function Dashboard(props) {
   const [walletMenu, setWalletMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState("");
+  const [showQr, setShowQr] = useState(false);
   const loadedAt = useRef(Date.now() / 1000);
   const now = useNow();
   const member = data.member;
@@ -210,7 +212,13 @@ export default function Dashboard(props) {
       <div className="db-share">
         <a href={`https://wa.me/?text=${encodeURIComponent(`${shareText} ${referralLink}`)}`} target="_blank" rel="noreferrer"><MessageCircle size={15}/> WhatsApp</a>
         <a href={`https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer"><Send size={15}/> Telegram</a>
+        <button onClick={() => setShowQr(true)}><QrCode size={15}/> QR code</button>
         {typeof navigator !== "undefined" && navigator.share && <button onClick={nativeShare}><Share2 size={15}/> More</button>}
+      </div>
+      {showQr && <ReferralQr link={referralLink} address={account} onClose={() => setShowQr(false)}/>}
+      <div className="db-ref-address">
+        <div><span>Your referral address</span><b title={account}>{account}</b><small>New members can paste this in the join window instead of using the link.</small></div>
+        <button className="db-btn glass small" onClick={() => copy(account, "refaddr")}>{copied === "refaddr" ? <><Check size={14}/> Copied</> : <><Copy size={14}/> Copy address</>}</button>
       </div>
     </> : <div className="db-locked"><Lock size={16}/><span>{account ? "Join to get your personal referral link." : "Connect your wallet to get your referral link."}</span><button className="db-btn gold small" onClick={account ? openRegistration : () => connect()}>{account ? "Join now" : "Connect"}</button></div>}
     <div className="db-slots">

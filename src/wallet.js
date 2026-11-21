@@ -92,7 +92,10 @@ export async function ensureTestnet(eth) {
 
 // Deep links that open this exact page (including the referral code) inside a mobile wallet's browser.
 export const mobileWalletLinks = () => {
-  const href = window.location.href;
+  // Ask the page to connect straight away once it opens inside the wallet app (saves a tap).
+  const url = new URL(window.location.href);
+  url.searchParams.set("autoconnect", "1");
+  const href = url.toString();
   const withoutProtocol = href.replace(/^https?:\/\//, "");
   return [
     { name: "MetaMask", url: `https://metamask.app.link/dapp/${withoutProtocol}` },
