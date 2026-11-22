@@ -227,3 +227,22 @@
 }
 .hp-wallet{white-space:nowrap}
 @media(max-width:420px){.hp-wallet svg:last-child{display:none}.hp-brand{font-size:16px}.hp-nav-inner{gap:10px}}
+/* Test token panel (mock USDT + tBNB faucet) */
+.hp-faucet{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;margin-top:16px;padding:20px 22px;border-radius:20px;background:linear-gradient(120deg,#10243a,#0c1a2b);border:1px solid #6aa8ff33}
+.hp-faucet-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:#f2c35a1f;color:var(--gold)}
+.hp-faucet-copy h2{font-size:20px;font-weight:800;margin:6px 0 4px}
+.hp-faucet-copy p{margin:0;font-size:14px;color:var(--muted);line-height:1.5}
+.hp-faucet-copy p b{color:var(--text)}
+.hp-faucet-side{display:grid;gap:10px;justify-items:end}
+.hp-faucet-balances{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.hp-faucet-balances span{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:99px;background:#ffffff0d;font-size:13px;font-weight:700;color:#d8dee5}
+.hp-faucet-balances span.low{background:#ff7a6b1a;color:#ffb3a8}
+.hp-faucet-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.hp-faucet-actions .hp-btn{text-decoration:none}
+.hp-faucet-actions .hp-btn:disabled{opacity:.75;cursor:wait;transform:none}
+.hp-spin{animation:hp-spin 1s linear infinite}
+.hp-faucet-error{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;color:#ffb3a8;text-align:right}
+.hp-faucet-error.warn{color:#f2d48a}
+@keyframes hp-spin{to{transform:rotate(360deg)}}
+@media(max-width:900px){.hp-faucet{grid-template-columns:auto 1fr}.hp-faucet-side{grid-column:1/-1;justify-items:stretch}.hp-faucet-balances,.hp-faucet-actions{justify-content:flex-start}.hp-faucet-error{text-align:left}}
+@media(max-width:560px){.hp-faucet{padding:18px;grid-template-columns:1fr}.hp-faucet-icon{display:none}.hp-faucet-actions .hp-btn{flex:1 1 100%}}

@@ -120,7 +120,6 @@ function App() {
   const inviterRef = useRef(inviter);
   const setInviter = (next) => { inviterRef.current = next; setInviterState(next); };
   const [joinFee, setJoinFee] = useState(null);
-  const [referrerSlots, setReferrerSlots] = useState(null);
   const [walletChecked, setWalletChecked] = useState(false);
   const [walletProvider, setWalletProvider] = useState(null);
   const [connectStage, setConnectStage] = useState("idle");
@@ -240,10 +239,12 @@ function App() {
   }, []);
   const closeRegistration = useCallback(() => setRegistrationOpen(false), []);
 
-  const registerMember = async (session) => {
+  // `mode` lets the ROI / Compound join buttons register with the plan that was just tapped.
+  const registerMember = async (session, mode) => {
+    const joinMode = mode ?? registrationMode;
     const activeProvider = session?.provider || provider;
     const activeAccount = session?.account || account;
-    if (!activeAccount) return connectAndRegister();
+    if (!activeAccount) return connectAndRegister(undefined, joinMode);
     if (!isConfigured) return;
     setBusy(true); setRegistrationError(""); setRegistrationTx("");
     try {
@@ -256,7 +257,7 @@ function App() {
         setRegistrationStage("placing");
         const placement = await selectRegistrationPlacement(contract);
         setReferrer(placement.referrer); setLeg(placement.leg);
-        const args = [placement.referrer, placement.leg, split, registrationMode];
+        const args = [placement.referrer, placement.leg, split, joinMode];
         try {
           await contract.registerWithMode.estimateGas(...args);
           setRegistrationStage("wallet");
@@ -321,33 +322,15 @@ function App() {
   // Applies a referral link or referrer wallet address (empty input = no referrer, automatic placement).
   const applyInvite = async (input, legChoice) => {
     const text = (input || "").trim();
-    if (!text) { setInviter({ ref: "", leg: 0 }); setReferrerSlots(null); storage.clear(); setPlacementError(""); await refreshPlacement(); return ""; }
+    if (!text) { setInviter({ ref: "", leg: 0 }); storage.clear(); setPlacementError(""); await refreshPlacement(); return ""; }
     const result = await checkReferrer(text);
     if (result.error) return result.error;
     const next = { ref: result.address, leg: legChoice ?? result.leg };
-    setInviter(next); setReferrerSlots(result.slots); storage.set(next);
+    setInviter(next); storage.set(next);
     await refreshPlacement();
     return "";
   };
 
-  // Lets the new member choose Organization A or B when their referrer has both spots open.
-  const chooseLeg = async (nextLeg) => {
-    if (!inviterRef.current.ref) return;
-    const next = { ...inviterRef.current, leg: nextLeg };
-    setInviter(next); storage.set(next);
-    await refreshPlacement();
-  };
-
-  // Keep the referrer's open A/B spots up to date (also for visitors who arrive through a link).
-  useEffect(() => {
-    if (!inviter.ref || !isConfigured) { setReferrerSlots(null); return; }
-    let cancelled = false;
-    const reader = readContract();
-    Promise.all([reader.directLeg(inviter.ref, 0), reader.directLeg(inviter.ref, 1)])
-      .then(([legA, legB]) => { if (!cancelled) setReferrerSlots({ a: legA === ZERO, b: legB === ZERO }); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [inviter.ref, provider, registrationOpen]);
 
   const refreshPlacement = async () => {
     if (!provider || !isConfigured) return;
@@ -406,11 +389,34 @@ function App() {
     } finally { setConnectStage("idle"); }
   };
 
+  // Free test tokens for the testnet, used from the join window's success screen.
+  // Returns an error message, or "" when the tokens arrived.
+  const mintTestUsdt = async (session) => {
+    const activeProvider = session?.provider || provider;
+    const activeAccount = session?.account || account;
+    if (!activeAccount || !activeProvider || !isConfigured) return "Connect your wallet first.";
+    try {
+      const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, await activeProvider.getSigner());
+      const tx = await token.mint(activeAccount, ethers.parseUnits("10000", TOKEN_DECIMALS));
+      await tx.wait();
+      await load(activeProvider, activeAccount);
+      return "";
+    } catch (error) { return friendlyError(error); }
+  };
+
+  // Home page version: connects the wallet first if needed, then mints. Anyone can mint; joining isn't required.
+  const mintFromHome = async () => {
+    if (!isConfigured) return "Test tokens are available once the contracts are configured.";
+    const session = account && provider ? { provider, account } : await connect();
+    if (!session) return "Connect your wallet to get test tokens.";
+    return mintTestUsdt(session);
+  };
+
   // One tap: connect, switch network and register without stopping in between.
-  const connectAndRegister = async (chosen) => {
+  const connectAndRegister = async (chosen, mode) => {
     const session = account && provider ? { provider, account } : await connect(chosen);
     if (!session || session.member?.registered) return;
-    await registerMember(session);
+    await registerMember(session, mode);
   };
 
   // While waiting for faucet gas, poll the balance and continue registration by itself.
@@ -607,12 +613,13 @@ function App() {
     open={registrationOpen} onClose={closeRegistration} account={account} connect={connect}
     isConfigured={isConfigured} registered={Boolean(data.member?.registered)}
     stage={registrationStage} error={registrationError} txHash={registrationTx}
-    onRegister={() => registerMember()} onContinue={connectAndRegister}
+    onRegister={(mode) => registerMember(undefined, mode)} onContinue={connectAndRegister}
     registrationMode={registrationMode} setRegistrationMode={setRegistrationMode}
     sponsor={referrer} leg={leg} linkReferrer={inviter.ref} onApplyInvite={applyInvite}
-    onCheckReferrer={checkReferrer} referrerSlots={referrerSlots} preferredLeg={inviter.leg} onChooseLeg={chooseLeg}
+    onCheckReferrer={checkReferrer}
     joinFee={joinFee} onSwitchAccount={switchAccount}
     placementReady={placementReady} placementError={placementError} gasBalance={data.gas}
+    usdtBalance={data.balance} onMintUsdt={() => mintTestUsdt()}
     referralLink={referralLink} copyReferralLink={copyReferralLink} onInvest={startFirstPosition}
     wallets={wallets} connectStage={connectStage} connectError={connectError}
     wrongNetwork={Boolean(walletProvider) && !account} onSwitchNetwork={switchNetwork}
@@ -634,7 +641,8 @@ function App() {
 
   return <><Home {...{
     account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
-    isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting, referralLink
+    isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting, referralLink,
+    onMintUsdt: mintFromHome
   }}/>{wizard}</>;
 }
 

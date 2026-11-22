@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { ethers } from "ethers";
 import {
-  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, Coins, Copy, Crown, Gift, LayoutDashboard, Link2,
+  ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, CircleAlert, Coins, Copy, Crown, ExternalLink, Fuel, Gift, LayoutDashboard, Link2, Loader2,
   Menu, MessageCircle, Network, QrCode, Send, Share2, ShieldCheck, Sparkles, TrendingUp, UserPlus, Users, Wallet, X
 } from "lucide-react";
 import Avatar from "./Avatar";
@@ -24,7 +25,7 @@ const faqs = [
 
 export default function Home({
   account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
-  isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting, referralLink
+  isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting, referralLink, onMintUsdt
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
@@ -35,6 +36,15 @@ export default function Home({
     try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 1800); } catch {}
   };
   const shareText = "Join my team on Vantex Capital:";
+  const [mint, setMint] = useState({ status: "idle", error: "" });
+  const mintUsdt = async () => {
+    setMint({ status: "minting", error: "" });
+    const problem = await onMintUsdt();
+    setMint(problem ? { status: "idle", error: problem } : { status: "done", error: "" });
+    if (!problem) setTimeout(() => setMint(current => current.status === "done" ? { status: "idle", error: "" } : current), 4000);
+  };
+  const usdt = Number(data.balance || 0);
+  const tbnb = data.gas === null || data.gas === undefined ? null : Number(ethers.formatEther(data.gas));
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -117,6 +127,33 @@ export default function Home({
           <Link2 size={18}/><span><b>Wallet connected.</b> Join to unlock your personal referral link.</span>
           <button className="hp-btn gold small" onClick={openRegistration}>Join now <ArrowRight size={15}/></button>
         </div>
+      </div>}
+
+      {isConfigured && <div className="hp-wrap">
+        <section className="hp-faucet" aria-label="Test tokens">
+          <div className="hp-faucet-icon"><Coins size={22}/></div>
+          <div className="hp-faucet-copy">
+            <span className="hp-eyebrow">BSC Testnet · free test tokens</span>
+            <h2>Get mock USDT to try Vantex</h2>
+            <p>Mock USDT is used to create positions. Registering only needs a little <b>tBNB</b> for gas.</p>
+          </div>
+          <div className="hp-faucet-side">
+            {account && <div className="hp-faucet-balances">
+              <span><Coins size={14}/> {usdt.toLocaleString("en-US", { maximumFractionDigits: 2 })} mUSDT</span>
+              <span className={tbnb === 0 ? "low" : ""}><Fuel size={14}/> {tbnb === null ? "…" : tbnb.toLocaleString("en-US", { maximumFractionDigits: 4 })} tBNB</span>
+            </div>}
+            <div className="hp-faucet-actions">
+              <button className="hp-btn gold" disabled={mint.status === "minting"} onClick={mintUsdt}>
+                {mint.status === "minting" ? <><Loader2 size={16} className="hp-spin"/> Minting… confirm in wallet</>
+                  : mint.status === "done" ? <><Check size={16}/> 10,000 mUSDT added</>
+                  : <><Coins size={16}/> {account ? "Mint 10,000 mock USDT" : "Connect & mint 10,000 mock USDT"}</>}
+              </button>
+              <a className="hp-btn ghost" href="https://www.bnbchain.org/en/testnet-faucet" target="_blank" rel="noreferrer"><Fuel size={16}/> Free tBNB for gas <ExternalLink size={14}/></a>
+            </div>
+            {mint.error && <p className="hp-faucet-error"><CircleAlert size={14}/> {mint.error}</p>}
+            {tbnb === 0 && !mint.error && <p className="hp-faucet-error warn"><Fuel size={14}/> No tBNB yet. Get some free from the faucet to pay gas for minting and registering.</p>}
+          </div>
+        </section>
       </div>}
 
       <section className="hp-hero hp-wrap">

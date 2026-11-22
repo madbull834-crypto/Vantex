@@ -32,7 +32,7 @@ export default function RegistrationWizard({
   stage, error, txHash, onRegister, onContinue,
   registrationMode, setRegistrationMode,
   sponsor, leg, linkReferrer, placementReady, placementError, onApplyInvite, joinFee, gasBalance, onSwitchAccount,
-  onCheckReferrer, referrerSlots, preferredLeg, onChooseLeg,
+  onCheckReferrer, usdtBalance, onMintUsdt,
   referralLink, copyReferralLink, onInvest,
   wallets, connectStage, connectError, wrongNetwork, onSwitchNetwork
 }) {
@@ -45,6 +45,8 @@ export default function RegistrationWizard({
   const [refCheck, setRefCheck] = useState({ status: "idle" });
   const primaryRef = useRef(null);
   const [showQr, setShowQr] = useState(false);
+  const [walletId, setWalletId] = useState("");
+  const [mint, setMint] = useState({ status: "idle", error: "" });
   const checkSeq = useRef(0);
 
   const linkChecked = useRef("");
@@ -118,10 +120,23 @@ export default function RegistrationWizard({
   // Don't let someone join by accident while a referrer they typed is still being checked or is invalid.
   const refPending = editingRef && refText.trim() !== "" && refCheck.status !== "idle";
   const invited = Boolean(linkReferrer) && !editingRef;
-  const bothOpen = referrerSlots?.a && referrerSlots?.b;
-  const sideOpen = (side) => side === 0 ? referrerSlots?.a : referrerSlots?.b;
   const lowGas = account && gasBalance !== null && gasBalance !== undefined && joinFee !== null && gasBalance < joinFee;
-  const singleWallet = wallets.length === 1 ? wallets[0] : null;
+  const hasUsdt = Number(usdtBalance || 0) > 0;
+  const getTestUsdt = async () => {
+    setMint({ status: "minting", error: "" });
+    const problem = await onMintUsdt();
+    setMint(problem ? { status: "idle", error: problem } : { status: "done", error: "" });
+  };
+  const selectedWallet = wallets.find(wallet => wallet.id === walletId) || wallets[0] || null;
+  // The ROI / Compound buttons are the join action whenever a wallet can be used right here.
+  const canJoin = Boolean(account) || (wallets.length > 0 && !wrongNetwork);
+  const joinDisabled = !isConfigured || refPending || (Boolean(account) && (!placementReady || Boolean(placementError)));
+  const join = (mode) => {
+    setRegistrationMode(mode);
+    if (account) onRegister(mode);
+    else if (selectedWallet) onContinue(selectedWallet.provider, mode);
+  };
+  const joinLabel = (title) => stage === "error" ? "Try again" : !account && selectedWallet ? `Join with ${title}` : editingRef && !linkReferrer ? `Join with ${title}, no referrer` : `Join with ${title}`;
 
   const close = () => { if (!inFlow) onClose(); };
 
@@ -133,12 +148,20 @@ export default function RegistrationWizard({
         <div className="reg-success-icon"><Check size={28}/></div>
         <span className="reg-kicker">WELCOME TO VANTEX</span>
         <h2 id="reg-title">You're in!</h2>
-        <p>Your account is active{sponsor ? <> in <b>{short(sponsor)}</b>'s team</> : null}. Two quick things to do next:</p>
+        <p>Your account is active{sponsor ? <> in <b>{short(sponsor)}</b>'s team</> : null}. A few quick things to do next:</p>
         <div className="reg-next">
-          <button ref={primaryRef} className="reg-next-item primary" onClick={onInvest}><span>1</span><div><b>Create your first position</b><small>Start earning Monday–Friday rewards</small></div><ArrowUpRight size={16}/></button>
+          {hasUsdt
+            ? <div className="reg-next-item done"><span><Check size={14}/></span><div><b>Test USDT ready</b><small>You have ${Number(usdtBalance).toLocaleString("en-US", { maximumFractionDigits: 2 })} test mUSDT to invest</small></div></div>
+            : <button className="reg-next-item gold" disabled={mint.status === "minting"} onClick={getTestUsdt}>
+                <span>1</span>
+                <div><b>{mint.status === "minting" ? "Adding test USDT…" : "Get 10,000 free test USDT"}</b><small>{mint.status === "minting" ? "Confirm in your wallet, then wait a few seconds" : "Needed to create a position on the testnet"}</small></div>
+                {mint.status === "minting" ? <Loader2 className="spin" size={16}/> : <Coins size={16}/>}
+              </button>}
+          {mint.error && <p className="reg-next-error"><CircleAlert size={13}/> {mint.error}</p>}
+          <button ref={primaryRef} className={`reg-next-item ${hasUsdt ? "primary" : ""}`} onClick={onInvest}><span>2</span><div><b>Create your first position</b><small>Start earning Monday–Friday rewards</small></div><ArrowUpRight size={16}/></button>
         </div>
         {referralLink && <div className="reg-share">
-          <div className="reg-share-head"><span>2</span><div><b>Share your invite</b><small>Your referral link is ready to use</small></div></div>
+          <div className="reg-share-head"><span>3</span><div><b>Share your invite</b><small>Your referral link is ready to use</small></div></div>
           <div className="reg-link"><input readOnly value={referralLink} onFocus={event => event.target.select()} aria-label="Your referral link"/><button onClick={() => copy(referralLink, "ref")}>{copied === "ref" ? <><Check size={14}/> Copied</> : <><Copy size={14}/> Copy</>}</button></div>
           <div className="reg-share-row">
             <a href={`https://wa.me/?text=${encodeURIComponent(`Join my team on Vantex Capital: ${referralLink}`)}`} target="_blank" rel="noreferrer"><MessageCircle size={15}/> WhatsApp</a>
@@ -170,7 +193,7 @@ export default function RegistrationWizard({
           <li><span>2</span><div><b>Paste it in the BNB faucet</b><a className="reg-primary small" href={FAUCET_URL} target="_blank" rel="noreferrer">Open faucet <ExternalLink size={14}/></a></div></li>
         </ol>
         <div className="reg-waiting"><Loader2 size={15}/><span>Waiting for gas… <b>We'll finish registration automatically</b> as soon as it arrives.</span></div>
-        <button className="reg-text-btn center" onClick={onRegister}><RefreshCw size={13}/> Check now</button>
+        <button className="reg-text-btn center" onClick={() => onRegister()}><RefreshCw size={13}/> Check now</button>
       </div>
 
       : <>
@@ -218,79 +241,63 @@ export default function RegistrationWizard({
                 <Avatar address={linkReferrer}/>
                 <div>
                   <b>Referred by <a href={EXPLORER_ADDRESS + linkReferrer} target="_blank" rel="noreferrer" title={linkReferrer}>{short(linkReferrer)}</a></b>
-                  <span>{referrerSlots === null ? "Active member" : bothOpen ? "Choose where you'd like to join." : (referrerSlots.a || referrerSlots.b) ? `You'll take their open Organization ${referrerSlots.a ? "A" : "B"} spot.` : "Their direct spots are full, so you'll join the next open spot in their team."}</span>
+                  <span>You'll join their team automatically.</span>
                 </div>
                 <span className="reg-badge"><CircleCheck size={12}/> Verified</span>
               </div>
-              {referrerSlots && <div className="reg-sides">
-                {[0, 1].map(side => <button key={side} disabled={!bothOpen} className={`${(bothOpen ? preferredLeg === side : sideOpen(side)) ? "active" : ""} ${sideOpen(side) ? "" : "taken"}`} onClick={() => onChooseLeg(side)} aria-pressed={bothOpen && preferredLeg === side}>
-                  <b>Organization {side === 0 ? "A" : "B"}</b><span>{sideOpen(side) ? "Open" : "Taken"}</span>
-                </button>)}
-              </div>}
-              {account && placementReady && spillover && <small className="reg-spill">You'll be placed under {short(sponsor)} in Organization {leg === 1 ? "B" : "A"}.</small>}
               <button className="reg-text-btn" onClick={() => { setEditingRef(true); setRefText(""); setRefCheck({ status: "idle" }); }}><RefreshCw size={12}/> Change referrer</button>
             </div>
 
           : <div className="reg-sponsor-card stack">
               <div className="reg-sponsor-row">
                 <span className="reg-avatar empty"><Users size={18}/></span>
-                <div><b>No referrer</b><span>{account && placementReady && sponsor ? <>You'll be placed under {short(sponsor)} in Organization {leg === 1 ? "B" : "A"}.</> : "We'll place you in the next open spot automatically."}</span></div>
+                <div><b>No referrer</b><span>We'll place you in the team automatically.</span></div>
               </div>
               <button className="reg-text-btn" onClick={() => { setEditingRef(true); }}><UserPlus size={13}/> Add a referrer</button>
             </div>}
         </div>
 
-        <div className="reg-settings">
-          <span className="reg-section-label">Choose your plan</span>
-          <div className="reg-choices reg-plan-choices">
-            <button className={registrationMode === 0 ? "active" : ""} aria-pressed={registrationMode === 0} onClick={() => setRegistrationMode(0)}>
-              <Coins size={18}/><b>ROI</b><span>Rewards are paid to your wallet. Claim them Mon–Fri whenever you like.</span>
-              {registrationMode === 0 && <Check size={15} className="reg-plan-check"/>}
-            </button>
-            <button className={registrationMode === 1 ? "active" : ""} aria-pressed={registrationMode === 1} onClick={() => setRegistrationMode(1)}>
-              <RefreshCw size={18}/><b>Compound</b><span>Rewards are reinvested automatically to grow your position.</span>
-              {registrationMode === 1 && <Check size={15} className="reg-plan-check"/>}
-            </button>
-          </div>
-          <p className="reg-hint">You can switch between ROI and Compound later from your dashboard.</p>
-        </div>
-
         {(error && stage === "error") || connectError ? <div className="reg-warn error"><CircleAlert size={14}/><span>{stage === "error" ? error : connectError}</span></div> : null}
         {!isConfigured && <div className="reg-warn"><CircleAlert size={14}/><span>Contracts aren't configured yet, so registration is disabled in preview mode.</span></div>}
 
-        <div className="reg-cta">
-          {account ? <>
-              <div className="reg-account">
+        {canJoin ? <div className="reg-join">
+            <span className="reg-section-label">{invited ? "Accept your invite with a plan" : "Join with a plan"}</span>
+
+            {!account && wallets.length > 1 && <div className="reg-wallet-pick" role="radiogroup" aria-label="Your wallet">
+              {wallets.map(wallet => <button key={wallet.id} role="radio" aria-checked={selectedWallet?.id === wallet.id} className={selectedWallet?.id === wallet.id ? "active" : ""} onClick={() => setWalletId(wallet.id)}>
+                {wallet.icon ? <img src={wallet.icon} alt=""/> : <Wallet size={16}/>}<span>{wallet.name}</span>
+              </button>)}
+            </div>}
+            {account ? <div className="reg-account">
                 <Avatar address={account} size={22}/><span>{short(account)}</span><i/>BSC Testnet
                 <button onClick={onSwitchAccount}>Switch</button>
               </div>
-              <ul className="reg-benefits">
-                <li><Check size={14}/>Your own referral link</li>
-                <li><Check size={14}/>Earn from your team</li>
-                <li><Check size={14}/>Packages from $1</li>
-              </ul>
-              <button ref={primaryRef} className="reg-primary" disabled={!isConfigured || !placementReady || Boolean(placementError) || refPending} onClick={onRegister}>
-                {!placementReady && isConfigured ? <><Loader2 className="spin" size={16}/> Preparing…</>
-                  : refPending ? (refCheck.status === "invalid" ? "Fix the referrer address above" : <><Loader2 className="spin" size={16}/> Checking referrer…</>)
-                  : stage === "error" ? "Try again"
-                  : editingRef && !linkReferrer ? <>Join without a referrer <ArrowUpRight size={16}/></>
-                  : invited ? <>Accept invite &amp; join <ArrowUpRight size={16}/></>
-                  : <>Join now <ArrowUpRight size={16}/></>}
-              </button>
-              <p className={`reg-fee ${lowGas ? "warn" : ""}`}>
-                <Fuel size={13}/>
-                {joinFee !== null ? <>One confirmation · network fee ≈ {formatBnb(joinFee)} tBNB</> : <>One confirmation · small network fee</>}
-                {gasBalance !== null && gasBalance !== undefined && <> · you have {formatBnb(gasBalance)} tBNB</>}
-              </p>
-              {lowGas && <p className="reg-fee-help">Not enough tBNB for the fee. Click <b>Join now</b> and we'll show you how to get free test BNB.</p>}
-            </>
-            : wrongNetwork ? <button ref={primaryRef} className="reg-primary" onClick={onSwitchNetwork}><RefreshCw size={16}/> Switch to BSC Testnet</button>
-            : singleWallet ? <button ref={primaryRef} className="reg-primary" disabled={!isConfigured || refPending} onClick={() => onContinue(singleWallet.provider)}>
-                {singleWallet.icon ? <img src={singleWallet.icon} alt=""/> : <Wallet size={16}/>} {invited ? `Accept invite with ${singleWallet.name}` : `Continue with ${singleWallet.name}`}
-              </button>
-            : wallets.length ? <div className="reg-wallets">{wallets.map(wallet => <button key={wallet.id} disabled={!isConfigured || refPending} onClick={() => onContinue(wallet.provider)}>
-                {wallet.icon ? <img src={wallet.icon} alt=""/> : <Wallet size={18}/>}<b>{invited ? "Accept invite with" : "Continue with"} {wallet.name}</b><ArrowUpRight size={15}/>
-              </button>)}</div>
+              : wallets.length === 1 && <div className="reg-account">{selectedWallet.icon ? <img src={selectedWallet.icon} alt=""/> : <Wallet size={14}/>}<span>Using {selectedWallet.name}</span></div>}
+
+            <div className="reg-plan-join">
+              {[{ mode: 0, Icon: Coins, title: "ROI", text: "Rewards paid to your wallet. Claim them Mon–Fri whenever you like." },
+                { mode: 1, Icon: RefreshCw, title: "Compound", text: "Rewards reinvested automatically to grow your position." }].map(({ mode, Icon, title, text }) =>
+                <button key={mode} disabled={joinDisabled} onClick={() => join(mode)}>
+                  <span className="reg-plan-icon"><Icon size={20}/></span>
+                  <b>{title}</b>
+                  <span className="reg-plan-text">{text}</span>
+                  <span className="reg-plan-go">{joinLabel(title)} <ArrowUpRight size={15}/></span>
+                </button>)}
+            </div>
+
+            {account && !placementReady && isConfigured && <p className="reg-fee"><Loader2 className="spin" size={13}/> Preparing your registration…</p>}
+            {refPending && <p className="reg-fee warn">{refCheck.status === "invalid" ? "Fix the referrer address above to continue." : "Checking referrer…"}</p>}
+            {account && placementReady && !refPending && <p className={`reg-fee ${lowGas ? "warn" : ""}`}>
+              <Fuel size={13}/>
+              {joinFee !== null ? <>One confirmation · network fee ≈ {formatBnb(joinFee)} tBNB</> : <>One confirmation · small network fee</>}
+              {gasBalance !== null && gasBalance !== undefined && <> · you have {formatBnb(gasBalance)} tBNB</>}
+            </p>}
+            {lowGas && <p className="reg-fee-help">Not enough tBNB for the fee yet. Tap a plan and we'll show you how to get free test BNB.</p>}
+            <p className="reg-hint center">You can switch between ROI and Compound later from your dashboard.</p>
+          </div>
+
+        : <div className="reg-cta">
+          {wrongNetwork ? <button ref={primaryRef} className="reg-primary" onClick={onSwitchNetwork}><RefreshCw size={16}/> Switch to BSC Testnet</button>
             : isMobile() ? <>
                 <p className="reg-cta-note">Open this page in your wallet app. Your invitation comes with it.</p>
                 <div className="reg-wallets">{mobileWalletLinks().map(link => <a key={link.name} href={link.url}><Smartphone size={18}/><b>Open in {link.name}</b><ArrowUpRight size={15}/></a>)}</div>
@@ -304,7 +311,7 @@ export default function RegistrationWizard({
                 </div>
                 <button className="reg-text-btn" onClick={() => window.location.reload()}><RefreshCw size={13}/> I've installed it, reload this page</button>
               </>}
-        </div>
+        </div>}
 
         {!account && <>
           <button className="reg-text-btn" onClick={() => setShowHelp(value => !value)}><ChevronDown size={13} className={showHelp ? "flip" : ""}/> New to crypto wallets?</button>
