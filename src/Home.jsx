@@ -56,7 +56,8 @@ export default function Home({
   const registered = Boolean(data.member?.registered);
   const plan = plans[selectedPlan];
   const numericAmount = Number(amount) || 0;
-  const dailyPayout = numericAmount * plan.rateValue / 100;
+  // Each daily payout is half profit, half returned capital.
+  const dailyProfit = numericAmount * plan.rateValue / 200;
   const profit = Math.max(0, projected - numericAmount);
   const primaryAction = registered ? startInvesting : openRegistration;
   const primaryLabel = registered ? "Create a position" : "Join in one minute";
@@ -179,7 +180,8 @@ export default function Home({
           <input className="hp-range" type="range" min="1" max="2500" step="1" value={Math.min(2500, Math.max(1, numericAmount))} onChange={event => changeAmount(event.target.value)} aria-label="Amount slider"/>
           <div className="hp-calc-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={numericAmount === value ? "active" : ""} onClick={() => changeAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
           <div className="hp-calc-rows">
-            <div><span>Daily payout <small>Mon–Fri</small></span><b>${money(dailyPayout)}</b></div>
+            <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(dailyProfit)}</b></div>
+            <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(dailyProfit)}</b></div>
             <div><span>Earning days</span><b>≈{plan.earningDays}</b></div>
             <div><span>Profit over the term</span><b className="up">+${money(profit)}</b></div>
             <div className="total"><span>Total paid back <small>incl. your capital</small></span><b>${money(projected)}</b></div>
@@ -192,7 +194,7 @@ export default function Home({
       <section className="hp-strip">
         <div className="hp-wrap hp-strip-inner">
           <div><b>4</b><span>packages from $1</span></div>
-          <div><b>{plans[3].totalRate}</b><span>top daily payout</span></div>
+          <div><b>{plans[3].rate}</b><span>top daily profit</span></div>
           <div><b>15</b><span>network reward levels</span></div>
           <div><b>5</b><span>salary milestones</span></div>
         </div>
@@ -212,11 +214,11 @@ export default function Home({
         <div className="hp-head"><div><span className="hp-eyebrow">Packages</span><h2>Choose your pace</h2></div><p>Every package stops at a 2× total payout. Higher Monday–Friday daily rates reach 2× in fewer earning days. Package returns are the same for everyone, whatever your team volume.</p></div>
         <div className="hp-plans">{plans.map(item => <article key={item.name} className={`hp-plan ${item.color} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => selectPlan(item.index)}>
           <div className="hp-plan-top"><span>{item.name}</span>{item.index === 2 && <b>POPULAR</b>}</div>
-          <h3>{item.totalRate}<small>/ day</small></h3>
+          <h3>{item.rate}<small>/ day profit</small></h3>
           <p className="hp-plan-range">{item.label}</p>
           <ul>
-            <li><Coins size={14}/>{item.rate} daily profit</li>
-            <li><ShieldCheck size={14}/>{item.rate} daily capital release</li>
+            <li><ShieldCheck size={14}/>+ {item.rate} capital released daily</li>
+            <li><Coins size={14}/>{item.totalRate} total paid per earning day</li>
             <li><CalendarDays size={14}/>{item.days}</li>
           </ul>
           <button className="hp-btn outline full" onClick={event => { event.stopPropagation(); selectPlan(item.index); primaryAction(); }}>{registered ? "Start this package" : "Join & choose"} <ArrowRight size={15}/></button>

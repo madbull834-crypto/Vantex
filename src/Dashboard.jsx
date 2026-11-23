@@ -83,28 +83,30 @@ export default function Dashboard(props) {
     const startedAt = Number(position.startedAt);
     const endsAt = Number(position.endsAt);
     const rate = Number(position.dailyRateBps) / 100;
+    const profitRate = rate / 2;
+    const profitPerDay = principal * profitRate / 100;
     const totalPayout = principal * 2;
     const targetDays = 200 / rate;
     const plan = Number(position.plan);
-    return { index, principal, claimed, startedAt, endsAt, rate, totalPayout, targetDays, plan, name: planNames[plan] || "Package" };
+    return { index, principal, claimed, startedAt, endsAt, rate, profitRate, profitPerDay, totalPayout, targetDays, plan, name: planNames[plan] || "Package" };
   }), [data.positions, tokenDecimals]);
 
   // Live figures between refreshes: rewards accrue per second on Monday–Friday.
   const live = useMemo(() => {
-    let earnedTotal = 0; let perSecond = 0; let activeCapital = 0; let perDay = 0;
+    let earnedTotal = 0; let perSecond = 0; let activeCapital = 0; let perDay = 0; let profitPerDay = 0;
     const rows = positions.map(position => {
       const until = Math.min(now, position.endsAt);
       const earningSeconds = until > position.startedAt ? businessSecondsUntil(until) - businessSecondsUntil(position.startedAt) : 0;
       const earned = Math.min(position.totalPayout, position.principal * position.rate / 100 * earningSeconds / DAY);
       const active = now < position.endsAt;
       const daysDone = Math.min(position.targetDays, earningSeconds / DAY);
-      if (active) { activeCapital += position.principal; perDay += position.principal * position.rate / 100; perSecond += position.principal * position.rate / 100 / DAY; }
+      if (active) { activeCapital += position.principal; perDay += position.principal * position.rate / 100; profitPerDay += position.profitPerDay; perSecond += position.principal * position.rate / 100 / DAY; }
       earnedTotal += earned;
       return { ...position, earned, active, daysDone, daysLeft: Math.max(0, Math.ceil(position.targetDays - daysDone)), progress: daysDone / position.targetDays * 100 };
     });
     const ticking = isEarningDay(now) && perSecond > 0;
     const pendingLive = Number(data.pending) + (ticking ? perSecond * Math.max(0, now - loadedAt.current) : 0);
-    return { rows, earnedTotal, activeCapital, perDay, pendingLive, ticking };
+    return { rows, earnedTotal, activeCapital, perDay, profitPerDay, capitalPerDay: perDay - profitPerDay, pendingLive, ticking };
   }, [positions, now, data.pending]);
 
   const totalClaimed = positions.reduce((sum, position) => sum + position.claimed, 0);
@@ -155,7 +157,7 @@ export default function Dashboard(props) {
       <span className="db-label"><Sparkles size={14}/> Available to claim</span>
       <strong className="db-hero-value">${money(live.pendingLive, live.ticking ? 4 : 2)}</strong>
       <p>{live.perDay > 0
-        ? <>Earning <b>${money(live.perDay)}</b> per earning day · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
+        ? <>Profit <b>${money(live.profitPerDay)}</b> per earning day <span className="db-hero-sub">+ ${money(live.capitalPerDay)} capital returned</span> · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
         : registered ? "Create a position to start earning Monday–Friday rewards." : "Join and create a position to start earning."}</p>
     </div>
     <div className="db-hero-actions">
@@ -170,11 +172,13 @@ export default function Dashboard(props) {
     <label className="db-field-label">Amount <span>USDT</span></label>
     <div className="db-amount"><span>$</span><input type="number" min="1" max="2500" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} aria-label="Amount in USDT"/><button onClick={() => setAmount(String(Math.min(2500, Math.floor(Number(data.balance)))))} disabled={Number(data.balance) < 1}>Max</button></div>
     <div className="db-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={Number(amount) === value ? "active" : ""} onClick={() => setAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
-    <div className="db-plan-pick">{plans.map(item => <button key={item.index} className={`${planColors[item.index]} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => setSelectedPlan(item.index)}><b>{item.totalRate}</b><span>{item.label}</span></button>)}</div>
+    <div className="db-plan-pick">{plans.map(item => <button key={item.index} className={`${planColors[item.index]} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => setSelectedPlan(item.index)}><b>{item.rate}</b><span>profit/day · {item.label}</span></button>)}</div>
     <div className="db-summary">
-      <div><span>Daily payout <small>Mon–Fri</small></span><b>${money(Number(amount || 0) * plan.rateValue / 100)}</b></div>
+      <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
+      <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
       <div><span>Term</span><b>{plan.days}</b></div>
-      <div className="total"><span>Total paid back <small>incl. capital</small></span><b>${money(projected)}</b></div>
+      <div><span>Profit over the term</span><b className="up">+${money(Math.max(0, projected - Number(amount || 0)))}</b></div>
+      <div className="total"><span>Total paid back <small>2× capital</small></span><b>${money(projected)}</b></div>
     </div>
     {account && member && !registered && <div className="db-mini-pick">
       <span>Your plan</span>
@@ -196,12 +200,12 @@ export default function Dashboard(props) {
       </div>
       <div className="db-position-stats">
         <div><span>Capital</span><b>${money(row.principal)}</b></div>
-        <div><span>Daily</span><b>{row.rate.toFixed(2)}%</b></div>
-        <div><span>Earned</span><b className="up">${money(row.earned)}</b></div>
+        <div><span>Profit / day</span><b className="up">${money(row.profitPerDay)}</b><small>{row.profitRate.toFixed(2)}% of capital</small></div>
+        <div><span>Profit earned</span><b className="up">${money(row.earned / 2)}</b><small>+ ${money(row.earned / 2)} capital back</small></div>
         <div><span>{row.active ? "Days left" : "Ended"}</span><b>{row.active ? row.daysLeft : dateLabel(row.endsAt)}</b></div>
       </div>
       <Progress value={row.progress} tone={planColors[row.plan]}/>
-      <small className="db-position-foot">{Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)}</small>
+      <small className="db-position-foot">{Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)} (2× cap: ${money(row.principal)} profit + ${money(row.principal)} capital)</small>
     </article>)}</div>;
   };
 
@@ -270,8 +274,8 @@ export default function Dashboard(props) {
 
     <section className="db-stats">
       <article><div className="db-stat-icon blue"><Wallet size={18}/></div><span>Wallet balance</span><strong>${money(data.balance)}</strong><button className="db-mini-btn" disabled={busy || !account} onClick={() => transact("mint")}><Plus size={13}/> Get test mUSDT</button></article>
-      <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active of {live.rows.length} positions</small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalClaimed)} claimed · ${money(data.referralEarnings)} from team</small></article>
+      <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active · <b className="up">${money(live.profitPerDay)} profit/day</b></small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(live.earnedTotal / 2)} profit + ${money(live.earnedTotal / 2)} capital · ${money(data.referralEarnings)} from team</small></article>
       <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>Level {data.level} of 15 unlocked</small></article>
     </section>
 
