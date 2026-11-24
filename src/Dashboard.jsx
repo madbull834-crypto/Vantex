@@ -159,6 +159,24 @@ export default function Dashboard(props) {
   }, [positions, now, data.pending]);
 
   const totalClaimed = positions.reduce((sum, position) => sum + position.claimed, 0);
+  const roiRows = live.rows.filter(row => !row.compound);
+  const compoundRows = live.rows.filter(row => row.compound);
+  const rowClaimable = (row) => Math.max(0, row.earned - row.claimed);
+  const roiPending = roiRows.reduce((sum, row) => sum + rowClaimable(row), 0);
+  const compoundPending = compoundRows.reduce((sum, row) => sum + rowClaimable(row), 0);
+  const roiPrincipal = roiRows.reduce((sum, row) => sum + row.principal, 0);
+  const compoundPrincipal = compoundRows.reduce((sum, row) => sum + row.principal, 0);
+  const roiClaimed = roiRows.reduce((sum, row) => sum + row.claimed, 0);
+  const compoundClaimed = compoundRows.reduce((sum, row) => sum + row.claimed, 0);
+  const roiEarned = roiRows.reduce((sum, row) => sum + row.earned, 0);
+  const compoundProfitEarned = compoundRows.reduce((sum, row) => sum + row.profitEarned, 0);
+  const roiPerDay = roiRows.filter(row => row.active).reduce((sum, row) => sum + row.principal * row.rate / 100, 0);
+  const compoundPerDay = compoundRows.filter(row => row.active).reduce((sum, row) => sum + row.profitPerDay, 0);
+  const lockedCompound = compoundRows.filter(row => row.active).reduce((sum, row) => sum + row.principal, 0);
+  const roiCapacity = roiRows.reduce((sum, row) => sum + row.totalPayout, 0);
+  const compoundMaturityValue = compoundRows.reduce((sum, row) => sum + row.totalPayout, 0);
+  const totalProfitEarned = roiEarned / 2 + compoundProfitEarned;
+  const totalCapitalReleased = Math.max(0, live.earnedTotal - totalProfitEarned);
   const aBusiness = member ? Number(ethers.formatUnits(member.legABusiness, tokenDecimals)) : 0;
   const bBusiness = member ? Number(ethers.formatUnits(member.legBBusiness, tokenDecimals)) : 0;
   const totalBusiness = aBusiness + bBusiness;
@@ -173,6 +191,9 @@ export default function Dashboard(props) {
   const nextSalaryAt = salaryRank && cyclesElapsed < 6 ? salaryStartedAt + (cyclesElapsed + 1) * SALARY_CYCLE : 0;
   const nextSalaryTier = salaryTiers[salaryRank];
   const salaryPay = salaryRank ? salaryTiers[salaryRank - 1].pay : 0;
+  const salaryAvailable = salaryClaimable * salaryPay;
+  const salaryCycleEarned = salaryClaims * salaryPay;
+  const salaryCycleMaximum = salaryPay * 6;
   const hasDirect = data.directA !== ethers.ZeroAddress || data.directB !== ethers.ZeroAddress;
   const earningToday = isEarningDay(now);
   const compoundMode = registered ? data.rewardMode === 1 : registrationMode === 1;
@@ -185,7 +206,7 @@ export default function Dashboard(props) {
   const steps = [
     { done: registered, label: "Join Vantex", hint: "One wallet confirmation", action: openRegistration, cta: "Join now" },
     { done: Number(data.balance) > 0 || positions.length > 0, label: "Get test mUSDT", hint: "Free tokens for the testnet", action: () => transact("mint"), cta: "Get 10,000" },
-    { done: positions.length > 0, label: "Create your first position", hint: "Packages start at $1", action: () => setSection("portfolio"), cta: "Choose package" },
+    { done: positions.length > 0, label: "Create your first position", hint: "Packages start at $1", action: () => setSection(compoundMode ? "compound" : "roi"), cta: "Choose package" },
     { done: hasDirect, label: "Invite your first member", hint: "Share your referral link", action: () => setSection("team"), cta: "Get link" }
   ];
   const stepsDone = steps.filter(step => step.done).length;
@@ -199,12 +220,13 @@ export default function Dashboard(props) {
 
   const navigation = [
     ["overview", LayoutDashboard, "Overview"],
-    ["portfolio", BriefcaseBusiness, "Portfolio"],
+    ["roi", TrendingUp, "ROI"],
+    ["compound", Repeat, "Compound"],
+    ["salary", Crown, "Salary"],
     ["team", Network, "Team"],
-    ["income", Layers, "ROI on ROI"],
-    ["rewards", BadgeDollarSign, "Rewards"]
+    ["income", Layers, "ROI on ROI"]
   ];
-  const titles = { overview: `${greeting()}.`, portfolio: "Portfolio", team: "Your team", income: "ROI on ROI income", rewards: "Rewards" };
+  const titles = { overview: `${greeting()}.`, roi: "ROI income", compound: "Compound income", salary: "Salary income", team: "Your team", income: "ROI on ROI income" };
 
   // ---------- Reusable blocks ----------
   const ClaimCard = <section className="db-hero">
@@ -252,9 +274,11 @@ export default function Dashboard(props) {
     <p className="db-fine">Estimates follow the contract terms and are not guaranteed.</p>
   </section>;
 
-  const renderPositions = (limit) => {
-    const rows = limit ? live.rows.slice().reverse().slice(0, limit) : live.rows.slice().reverse();
-    if (!rows.length) return <div className="db-empty"><BriefcaseBusiness size={30}/><b>No positions yet</b><span>Pick a package to create your first position.</span><button className="db-btn gold small" onClick={() => setSection("portfolio")}>Choose a package</button></div>;
+  const renderPositions = (limit, type = "all") => {
+    const source = type === "roi" ? roiRows : type === "compound" ? compoundRows : live.rows;
+    const rows = limit ? source.slice().reverse().slice(0, limit) : source.slice().reverse();
+    const target = type === "compound" ? "compound" : "roi";
+    if (!rows.length) return <div className="db-empty"><BriefcaseBusiness size={30}/><b>No {type === "all" ? "" : `${type} `}positions yet</b><span>Choose a package to create your first position.</span><button className="db-btn gold small" onClick={() => setSection(target)}>Choose a package</button></div>;
     return <div className="db-positions">{rows.map(row => <article key={row.index} className="db-position">
       <div className="db-position-top">
         <span className={`db-dot ${planColors[row.plan]}`}/>
@@ -340,13 +364,13 @@ export default function Dashboard(props) {
     <section className="db-stats">
       <article><div className="db-stat-icon blue"><Wallet size={18}/></div><span>Wallet balance</span><strong>${money(data.balance)}</strong><button className="db-mini-btn" disabled={busy || !account} onClick={() => transact("mint")}><Plus size={13}/> Get test mUSDT</button></article>
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active · <b className="up">${money(live.profitPerDay)} profit/day</b></small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(live.earnedTotal / 2)} profit + ${money(live.earnedTotal / 2)} capital · ${money(data.referralEarnings)} from team</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} profit + ${money(totalCapitalReleased)} capital · ${money(data.referralEarnings)} from team</small></article>
       <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>Level {data.level} of 15 unlocked</small></article>
     </section>
 
     <div className="db-grid">
       <section className="db-card">
-        <div className="db-card-head"><div><span className="db-eyebrow">Portfolio</span><h2>Recent positions</h2></div>{live.rows.length > 0 && <button className="db-link-btn" onClick={() => setSection("portfolio")}>View all <ArrowUpRight size={14}/></button>}</div>
+        <div className="db-card-head"><div><span className="db-eyebrow">Portfolio</span><h2>Recent positions</h2></div>{live.rows.length > 0 && <button className="db-link-btn" onClick={() => setSection(compoundMode ? "compound" : "roi")}>View income <ArrowUpRight size={14}/></button>}</div>
         {renderPositions(3)}
       </section>
       {InvestCard}
@@ -362,6 +386,107 @@ export default function Dashboard(props) {
     </section>
     {InvestCard}
   </div>;
+
+  const roiView = <>
+    <section className="db-income-hero db-roi-hero">
+      <div className="db-income-main">
+        <span className="db-label"><TrendingUp size={14}/> ROI available to claim</span>
+        <strong className="db-hero-value">${money(roiPending, earningToday ? 4 : 2)}</strong>
+        <p>{roiRows.length ? <>{roiRows.filter(row => row.active).length} active ROI position{roiRows.filter(row => row.active).length === 1 ? "" : "s"} · <b>${money(roiPerDay)}</b> total payout per earning day</> : "Choose an ROI package to begin earning toward its 2× payout cap."}</p>
+      </div>
+      <div className="db-income-stats">
+        <div><span>Invested</span><b>${money(roiPrincipal)}</b></div>
+        <div><span>Accrued payout</span><b>${money(roiEarned)}</b></div>
+        <div><span>Already claimed</span><b>${money(roiClaimed)}</b></div>
+        <div><span>Maximum payout</span><b>${money(roiCapacity)}</b></div>
+      </div>
+      <div className="db-hero-actions db-income-action"><button className="db-btn gold" disabled={busy || roiPending < MIN_CLAIM} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Claim ROI</button></div>
+      <div className="db-hero-glow"/>
+    </section>
+
+    <section className="db-stats">
+      <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>ROI capital</span><strong>${money(roiPrincipal)}</strong><small>{roiRows.length} position{roiRows.length === 1 ? "" : "s"}</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Profit accrued</span><strong>${money(roiEarned / 2)}</strong><small>The other half is returned capital</small></article>
+      <article><div className="db-stat-icon blue"><Coins size={18}/></div><span>Remaining to 2×</span><strong>${money(Math.max(0, roiCapacity - roiEarned))}</strong><small>Across every ROI position</small></article>
+      <article><div className="db-stat-icon violet"><Layers size={18}/></div><span>Level income received</span><strong>${money(data.referralEarnings)}</strong><small>ROI mode cap: 3× wallet deposits</small></article>
+    </section>
+
+    {data.rewardMode !== 0 && registered && <div className="db-banner gold"><TrendingUp size={18}/><span><b>ROI mode is not selected.</b> Switch modes to create a new ROI position. Existing positions continue under their original terms.</span><button className="db-btn gold small" disabled={busy} onClick={() => transact("setRewardMode", 0)}>Switch to ROI</button></div>}
+    <div className="db-grid">
+      <section className="db-card"><div className="db-card-head"><div><span className="db-eyebrow">ROI portfolio</span><h2>{roiRows.length} position{roiRows.length === 1 ? "" : "s"}</h2></div><span className="db-chip">2× payout cap</span></div>{renderPositions(undefined, "roi")}</section>
+      {(!registered || data.rewardMode === 0) && InvestCard}
+    </div>
+    <section className="db-card db-rules"><div className="db-card-head"><div><span className="db-eyebrow">ROI rules</span><h2>Income limits and timing</h2></div></div><div className="db-rule-grid">
+      <div><b>2× personal payout</b><span>Each ROI position stops after paying twice its deposited principal.</span></div>
+      <div><b>$5 minimum claim</b><span>Wallet ROI claims become available after at least $5 has accrued.</span></div>
+      <div><b>3× level-income capacity</b><span>Every fresh wallet deposit adds three times its amount to ROI-on-ROI capacity.</span></div>
+      <div><b>Monday–Friday</b><span>Returns accrue continuously on earning days and pause on weekends.</span></div>
+    </div></section>
+  </>;
+
+  const compoundView = <>
+    <section className="db-income-hero db-compound-hero">
+      <div className="db-income-main">
+        <span className="db-label"><Repeat size={14}/> Compound profit available</span>
+        <strong className="db-hero-value">${money(compoundPending, earningToday ? 4 : 2)}</strong>
+        <p>{compoundRows.length ? <><b>${money(compoundPerDay)}</b> profit per earning day · ${money(lockedCompound)} principal currently locked</> : "Choose Starter, Growth, or Elite to create your first compound position."}</p>
+      </div>
+      <div className="db-income-stats">
+        <div><span>Compound capital</span><b>${money(compoundPrincipal)}</b></div>
+        <div><span>Profit accrued</span><b>${money(compoundProfitEarned)}</b></div>
+        <div><span>Already claimed</span><b>${money(compoundClaimed)}</b></div>
+        <div><span>Full maturity value</span><b>${money(compoundMaturityValue)}</b></div>
+      </div>
+      <div className="db-hero-actions db-income-action"><button className="db-btn gold" disabled={busy || compoundPending <= 0} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Withdraw profit</button></div>
+      <div className="db-hero-glow"/>
+    </section>
+
+    <section className="db-plan-overview">{compoundPlans.map(item => <article key={item.index} className={item.color}>
+      <span>{item.name}</span><strong>{item.rate}<small>/day</small></strong><b>{item.earningDays} earning days</b><small>{(item.rateValue * item.earningDays).toFixed(1)}% package profit · principal unlocks at maturity</small>
+    </article>)}</section>
+
+    {data.rewardMode !== 1 && registered && <div className="db-banner gold"><Repeat size={18}/><span><b>Compound mode is not selected.</b> Switch modes to choose Starter, Growth, or Elite. Existing ROI positions keep their original terms.</span><button className="db-btn gold small" disabled={busy} onClick={() => transact("setRewardMode", 1)}>Switch to Compound</button></div>}
+    <div className="db-grid">
+      <section className="db-card"><div className="db-card-head"><div><span className="db-eyebrow">Compound portfolio</span><h2>{compoundRows.length} position{compoundRows.length === 1 ? "" : "s"}</h2></div><span className="db-chip green">Profit anytime</span></div>{renderPositions(undefined, "compound")}</section>
+      {(!registered || data.rewardMode === 1) && InvestCard}
+    </div>
+    <section className="db-card db-rules"><div className="db-card-head"><div><span className="db-eyebrow">Compound rules</span><h2>Withdrawals and principal</h2></div></div><div className="db-rule-grid">
+      <div><b>Profit every earning second</b><span>Claim accrued profit anytime without waiting for a daily close.</span></div>
+      <div><b>No $5 minimum</b><span>Any non-zero compound profit supported by token precision can be withdrawn.</span></div>
+      <div><b>Principal stays locked</b><span>The original deposit unlocks only after 90, 150, or 200 earning days.</span></div>
+      <div><b>Fixed selected package</b><span>Each position keeps the package rate and duration chosen when it was opened.</span></div>
+    </div></section>
+  </>;
+
+  const salaryView = <>
+    <section className="db-income-hero db-salary-hero">
+      <div className="db-income-main">
+        <span className="db-label"><Crown size={14}/> Salary available</span>
+        <strong className="db-hero-value">${money(salaryAvailable)}</strong>
+        <p>{salaryRank ? <>Rank {salaryRank} pays <b>${salaryPay}</b> every 15 days for six cycles.</> : "Build equal 50:50 volume across Organizations A and B to unlock salary income."}</p>
+      </div>
+      <div className="db-income-stats">
+        <div><span>Current rank</span><b>{salaryRank || "–"}</b></div>
+        <div><span>Current cycle claimed</span><b>${money(salaryCycleEarned)}</b></div>
+        <div><span>Six-cycle maximum</span><b>${money(salaryCycleMaximum)}</b></div>
+        <div><span>Balanced business</span><b>${money(balanced, 0)}</b></div>
+      </div>
+      <div className="db-hero-actions db-income-action"><button className="db-btn gold" disabled={busy || salaryClaimable <= 0} onClick={() => transact("claimSalary")}><ArrowDownToLine size={17}/> {salaryClaimable ? `Claim $${money(salaryAvailable, 0)}` : "No salary due"}</button></div>
+      <div className="db-hero-glow"/>
+    </section>
+
+    <div className="db-grid even">{SalaryCard}{TeamVolumeCard}</div>
+    <section className="db-card"><div className="db-card-head"><div><span className="db-eyebrow">Salary milestones</span><h2>50:50 qualification table</h2></div><span className="db-chip">6 payments each</span></div>
+      <div className="db-salary-tiers">{salaryTiers.map((tier, index) => {
+        const unlocked = balanced >= tier.need;
+        const active = salaryRank === index + 1;
+        return <article key={tier.need} className={`${unlocked ? "unlocked" : ""} ${active ? "active" : ""}`}>
+          <span>Rank {index + 1}{active && <em>Current</em>}</span><strong>${tier.pay}<small>/cycle</small></strong><b>${tier.need.toLocaleString()} business</b><small>A ${money(tier.need / 2, 0)} + B ${money(tier.need / 2, 0)} · every 15 days</small><Progress value={Math.min(100, balanced / tier.need * 100)} tone={unlocked ? "green" : "blue"}/>
+        </article>;
+      })}</div>
+      <p className="db-fine">When a higher rank is reached, its six-payment cycle begins from the qualification time. Deposited business counts; compound profit does not add team business.</p>
+    </section>
+  </>;
 
   const teamLevels = team.data?.levels || [];
   const teamMembers = teamLevels.flat();
@@ -645,7 +770,7 @@ export default function Dashboard(props) {
     </section>
   </>;
 
-  const views = { overview, portfolio, team: teamView, income: income_, rewards };
+  const views = { overview, roi: roiView, compound: compoundView, salary: salaryView, team: teamView, income: income_ };
 
   return <div className="db">
     <aside className="db-sidebar">

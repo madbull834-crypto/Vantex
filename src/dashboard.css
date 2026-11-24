@@ -257,7 +257,7 @@
   .db{grid-template-columns:1fr}
   .db-sidebar{display:none}
   .db-main{padding:18px 16px 96px}
-  .db-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(5,1fr);padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(8,18,31,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+  .db-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(6,1fr);padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(8,18,31,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line)}
   .db-tabbar button{display:grid;justify-items:center;gap:4px;padding:6px 0;border:0;background:none;color:var(--faint);font-size:11px;font-weight:600}
   .db-tabbar button.active{color:var(--gold)}
   .db-toast{left:16px;right:16px;bottom:88px;max-width:none}
@@ -394,11 +394,36 @@
 .db-income-main .db-label svg{color:var(--green)}
 .db-income-main p{margin:0;color:#a9b6c3;font-size:14px}
 .db-income-main p b{color:#fff}
+.db-roi-hero{background:linear-gradient(120deg,#3a2c0d 0%,#222315 42%,#0e1d2e 100%);border-color:#f2c35a44}
+.db-roi-hero .db-income-main .db-label svg{color:var(--gold)}
+.db-compound-hero{background:linear-gradient(120deg,#172c4c 0%,#15243d 45%,#0e1d2e 100%);border-color:#6aa8ff44}
+.db-compound-hero .db-income-main .db-label svg{color:var(--blue)}
+.db-salary-hero{background:linear-gradient(120deg,#382515 0%,#252032 45%,#0e1d2e 100%);border-color:#b096f244}
+.db-salary-hero .db-income-main .db-label svg{color:var(--violet)}
 .db-income-stats{position:relative;z-index:1;display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:10px}
 .db-income-stats div{display:grid;gap:3px;padding:12px 14px;border-radius:14px;background:#ffffff08;border:1px solid var(--line)}
 .db-income-stats span{font-size:12px;color:var(--muted)}
 .db-income-stats b{font:800 19px "Manrope";font-variant-numeric:tabular-nums}
 .db-income-stats small{font-size:12px;color:var(--muted);font-weight:600}
+.db-income-action{grid-column:1/-1}
+.db-plan-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.db-plan-overview article{--accent:var(--blue);display:grid;gap:6px;padding:20px;border-radius:18px;background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 15%,transparent),var(--card));border:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.db-plan-overview article.green{--accent:var(--green)}.db-plan-overview article.purple{--accent:var(--violet)}
+.db-plan-overview article>span{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.db-plan-overview strong{font:800 30px "Manrope";color:var(--text)}
+.db-plan-overview strong small{font-size:13px;color:var(--muted);margin-left:3px}
+.db-plan-overview article>b{font-size:14px}.db-plan-overview article>small{font-size:12px;line-height:1.5;color:var(--muted)}
+.db-rule-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.db-rule-grid>div{display:grid;gap:6px;padding:15px;border-radius:14px;background:#ffffff05;border:1px solid var(--line)}
+.db-rule-grid b{font-size:14px}.db-rule-grid span{font-size:12px;line-height:1.5;color:var(--muted)}
+.db-salary-tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.db-salary-tiers article{display:grid;gap:7px;padding:15px;border-radius:15px;background:#ffffff04;border:1px solid var(--line);opacity:.72}
+.db-salary-tiers article.unlocked{opacity:1;border-color:#4fd08a44;background:#4fd08a0a}
+.db-salary-tiers article.active{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold)}
+.db-salary-tiers article>span{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:800;color:var(--muted)}
+.db-salary-tiers em{font-style:normal;padding:3px 6px;border-radius:99px;background:#f2c35a1f;color:var(--gold);font-size:9px;text-transform:uppercase}
+.db-salary-tiers strong{font:800 24px "Manrope"}.db-salary-tiers strong small{font-size:11px;color:var(--muted);margin-left:3px}
+.db-salary-tiers article>b{font-size:13px}.db-salary-tiers article>small{font-size:11px;line-height:1.45;color:var(--faint)}
 .db-income-chart{display:grid;grid-template-columns:repeat(14,1fr);gap:6px;align-items:end;height:150px;margin:6px 0 10px}
 .db-income-chart div{display:grid;grid-template-rows:1fr auto;gap:6px;height:100%;cursor:default}
 .db-income-chart i{align-self:end;display:block;width:100%;border-radius:6px 6px 3px 3px;background:linear-gradient(180deg,#7fe0aa,#2f9e68);min-height:0;transition:height .3s}
@@ -435,6 +460,9 @@
 .db-kv .db-link-btn{display:inline-flex;margin-left:8px}
 @media(max-width:860px){
   .db-income-hero{grid-template-columns:1fr;padding:24px 20px}
+  .db-plan-overview{grid-template-columns:1fr}
+  .db-rule-grid{grid-template-columns:1fr 1fr}
+  .db-salary-tiers{grid-template-columns:repeat(2,1fr)}
   .db-income-row{grid-template-columns:.8fr .6fr 1.4fr .7fr;font-size:13px;padding:11px 10px}
   .db-income-row>span:nth-child(5){display:none}
 }
@@ -443,6 +471,7 @@
   .db-pay-row{grid-template-columns:auto 1fr auto;padding:10px 12px;gap:10px}
   .db-pay-row a{display:none}
   .db-tabbar button{font-size:10px}
+  .db-rule-grid,.db-salary-tiers{grid-template-columns:1fr}
 }
 
 .db-claim-min{flex-basis:100%;font-size:12px;color:#a9b6c3}
