@@ -52,6 +52,9 @@ const VANTEX_ABI = [
   "function owner() view returns (address)",
   "function directLeg(address,uint8) view returns (address)",
   "function referralEarnings(address) view returns (uint256)",
+  "function referralEarningsByLevel(address) view returns ((uint128 total,uint40 lastPaidAt,uint32 payments)[15])",
+  "function referralPaymentCount(address) view returns (uint256)",
+  "function referralPaymentsOf(address account,uint256 offset,uint256 limit) view returns ((uint128 amount,uint40 paidAt,uint8 level,address source)[])",
   "function rewardMode(address) view returns (uint8)",
   "function pendingRoi(address) view returns (uint256)",
   "function balancedBusiness(address) view returns (uint256)",
@@ -316,6 +319,38 @@ function App() {
     const out = [];
     for (let i = 0; i < items.length; i += size) out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
     return out;
+  };
+
+  // ROI-on-ROI income: totals per level and the most recent payments (newest first).
+  const ROI_HISTORY_LIMIT = 1000;
+  const loadRoiIncome = async (account) => {
+    if (!account || !isConfigured) return null;
+    const reader = readContract();
+    const total = Number(ethers.formatUnits(await reader.referralEarnings(account), TOKEN_DECIMALS));
+    let byLevel; let count;
+    try {
+      [byLevel, count] = await Promise.all([reader.referralEarningsByLevel(account), reader.referralPaymentCount(account)]);
+    } catch {
+      return { supported: false, total, levels: [], payments: [], count: 0, truncated: false, loadedAt: Date.now() };
+    }
+    count = Number(count);
+    const start = Math.max(0, count - ROI_HISTORY_LIMIT);
+    const offsets = [];
+    for (let offset = start; offset < count; offset += 200) offsets.push(offset);
+    const pages = await mapInChunks(offsets, 4, offset => reader.referralPaymentsOf(account, offset, 200));
+    const payments = pages.flat().map((p, i) => ({
+      id: start + i,
+      amount: Number(ethers.formatUnits(p.amount, TOKEN_DECIMALS)),
+      paidAt: Number(p.paidAt),
+      level: Number(p.level),
+      source: p.source
+    })).reverse();
+    const levels = Array.from(byLevel, entry => ({
+      total: Number(ethers.formatUnits(entry.total, TOKEN_DECIMALS)),
+      lastPaidAt: Number(entry.lastPaidAt),
+      payments: Number(entry.payments)
+    }));
+    return { supported: true, total, levels, payments, count, truncated: count > ROI_HISTORY_LIMIT, loadedAt: Date.now() };
   };
 
   // Walks the member's placement tree level by level (up to 15 levels, the ROI-on-ROI depth).
@@ -711,7 +746,7 @@ function App() {
     setReferrer, leg, setLeg, split, setSplit, registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer: inviter.ref,
     compoundPlan, openRegistration, levels,
-    refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount, loadTeam
+    refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount, loadTeam, loadRoiIncome
   }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>{wizard}</>;
 
   const startInvesting = () => {

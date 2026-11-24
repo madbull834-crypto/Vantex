@@ -352,4 +352,39 @@ describe("VantexCapital", function () {
     expect((await vantex.members(bob.address)).referrer).to.equal(alice.address);
     expect(await vantex.positionsOf(bob.address)).to.have.length(1);
   });
+
+  it("records ROI-on-ROI history with level, time and per-level totals", async function () {
+    const { owner, alice, bob, carol, vantex } = await fixture();
+    await vantex.connect(alice).register(owner.address, 0, 0);
+    await vantex.connect(bob).register(owner.address, 1, 0);
+    await vantex.connect(carol).register(alice.address, 0, 0);
+    await setNextBlockOnWeekday(1);
+    await vantex.connect(alice).invest(usdt(600), 2);
+    await vantex.connect(bob).invest(usdt(400), 1);
+    await vantex.connect(carol).invest(usdt(1000), 2);
+    await time.increase(14 * DAY);
+
+    await vantex.connect(alice).claimRoi();
+    await vantex.connect(carol).claimRoi();
+    const paidAt = await time.latest();
+
+    // Owner: level 1 from alice, then level 2 from carol (owner has unlocked level 11).
+    expect(await vantex.referralPaymentCount(owner.address)).to.equal(2);
+    const history = await vantex.referralPaymentsOf(owner.address, 0, 10);
+    expect(history[0].level).to.equal(1);
+    expect(history[0].source).to.equal(alice.address);
+    expect(history[1].level).to.equal(2);
+    expect(history[1].source).to.equal(carol.address);
+    expect(history[1].paidAt).to.equal(paidAt);
+    expect(await vantex.referralPaymentsOf(owner.address, 1, 10)).to.have.length(1);
+    expect(await vantex.referralPaymentsOf(owner.address, 9, 10)).to.have.length(0);
+
+    const levels = await vantex.referralEarningsByLevel(owner.address);
+    expect(levels[0].total).to.equal(history[0].amount);
+    expect(levels[0].payments).to.equal(1);
+    expect(levels[1].total).to.equal(history[1].amount);
+    expect(levels[1].lastPaidAt).to.equal(paidAt);
+    expect(levels[2].payments).to.equal(0);
+    expect(levels[0].total + levels[1].total).to.equal(await vantex.referralEarnings(owner.address));
+  });
 });

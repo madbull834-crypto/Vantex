@@ -49,6 +49,21 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         bytes32 s;
     }
 
+    /// @notice One ROI-on-ROI payment: when it was paid, from which level and how much.
+    struct ReferralPayment {
+        uint128 amount;
+        uint40 paidAt;
+        uint8 level;
+        address source;
+    }
+
+    /// @notice Running ROI-on-ROI totals for one level of a member's team.
+    struct LevelEarnings {
+        uint128 total;
+        uint40 lastPaidAt;
+        uint32 payments;
+    }
+
     struct Member {
         address referrer;
         uint128 personalBusiness;
@@ -87,6 +102,10 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     ///         spillover this can differ from `members[account].referrer`, the placement parent.
     mapping(address => address) public sponsorOf;
     mapping(address => address[]) private _directReferrals;
+
+    /// @dev ROI-on-ROI history, recorded from the upgrade that added it onwards.
+    mapping(address => ReferralPayment[]) private _referralPayments;
+    mapping(address => LevelEarnings[15]) private _levelEarnings;
 
     error Paused();
     error InvalidAmount();
@@ -235,6 +254,24 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         if (offset >= list.length) return new address[](0);
         uint256 end = offset + limit > list.length ? list.length : offset + limit;
         page = new address[](end - offset);
+        for (uint256 i = offset; i < end; ++i) page[i - offset] = list[i];
+    }
+
+    /// @notice ROI-on-ROI totals per level (index 0 = level 1), recorded since history tracking began.
+    function referralEarningsByLevel(address account) external view returns (LevelEarnings[15] memory) {
+        return _levelEarnings[account];
+    }
+
+    function referralPaymentCount(address account) external view returns (uint256) {
+        return _referralPayments[account].length;
+    }
+
+    /// @notice A page of ROI-on-ROI payments, oldest first.
+    function referralPaymentsOf(address account, uint256 offset, uint256 limit) external view returns (ReferralPayment[] memory page) {
+        ReferralPayment[] storage list = _referralPayments[account];
+        if (offset >= list.length) return new ReferralPayment[](0);
+        uint256 end = offset + limit > list.length ? list.length : offset + limit;
+        page = new ReferralPayment[](end - offset);
         for (uint256 i = offset; i < end; ++i) page[i - offset] = list[i];
     }
 
@@ -511,6 +548,11 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
                 if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
                     paymentToken.safeTransfer(upline, reward);
                     referralEarnings[upline] += reward;
+                    _referralPayments[upline].push(ReferralPayment(uint128(reward), uint40(block.timestamp), level, source));
+                    LevelEarnings storage earned = _levelEarnings[upline][level - 1];
+                    earned.total += uint128(reward);
+                    earned.lastPaidAt = uint40(block.timestamp);
+                    earned.payments += 1;
                     totalRewardsPaid += reward;
                     emit ReferralPaid(upline, source, level, reward);
                 }
@@ -556,5 +598,5 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[41] private __gap;
+    uint256[39] private __gap;
 }

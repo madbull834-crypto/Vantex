@@ -257,7 +257,7 @@
   .db{grid-template-columns:1fr}
   .db-sidebar{display:none}
   .db-main{padding:18px 16px 96px}
-  .db-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(4,1fr);padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:rgba(8,18,31,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+  .db-tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:grid;grid-template-columns:repeat(5,1fr);padding:8px 4px calc(8px + env(safe-area-inset-bottom));background:rgba(8,18,31,.94);backdrop-filter:blur(14px);border-top:1px solid var(--line)}
   .db-tabbar button{display:grid;justify-items:center;gap:4px;padding:6px 0;border:0;background:none;color:var(--faint);font-size:11px;font-weight:600}
   .db-tabbar button.active{color:var(--gold)}
   .db-toast{left:16px;right:16px;bottom:88px;max-width:none}
@@ -387,3 +387,60 @@
   .db-direct-row .db-direct-actions{grid-column:3;grid-row:2;justify-content:flex-end}
 }
 @media(max-width:640px){.db-direct-summary div:last-child{grid-column:1/-1}}
+
+/* ROI on ROI income */
+.db-income-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:1fr auto;align-items:end;gap:24px;padding:30px 32px;border-radius:24px;background:linear-gradient(120deg,#163a3a 0%,#10283a 45%,#0e1d2e 100%);border:1px solid #4fd08a33;box-shadow:0 24px 60px #0007}
+.db-income-main{position:relative;z-index:1;min-width:0}
+.db-income-main .db-label svg{color:var(--green)}
+.db-income-main p{margin:0;color:#a9b6c3;font-size:14px}
+.db-income-main p b{color:#fff}
+.db-income-stats{position:relative;z-index:1;display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:10px}
+.db-income-stats div{display:grid;gap:3px;padding:12px 14px;border-radius:14px;background:#ffffff08;border:1px solid var(--line)}
+.db-income-stats span{font-size:12px;color:var(--muted)}
+.db-income-stats b{font:800 19px "Manrope";font-variant-numeric:tabular-nums}
+.db-income-stats small{font-size:12px;color:var(--muted);font-weight:600}
+.db-income-chart{display:grid;grid-template-columns:repeat(14,1fr);gap:6px;align-items:end;height:150px;margin:6px 0 10px}
+.db-income-chart div{display:grid;grid-template-rows:1fr auto;gap:6px;height:100%;cursor:default}
+.db-income-chart i{align-self:end;display:block;width:100%;border-radius:6px 6px 3px 3px;background:linear-gradient(180deg,#7fe0aa,#2f9e68);min-height:0;transition:height .3s}
+.db-income-chart div:hover i{filter:brightness(1.25)}
+.db-income-chart div.today i{background:linear-gradient(180deg,#ffe7a8,var(--gold2))}
+.db-income-chart span{text-align:center;font-size:10px;color:var(--faint)}
+.db-income-chart div.today span{color:var(--gold);font-weight:700}
+.db-income-table{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.db-income-row{display:grid;grid-template-columns:.8fr .6fr 1.6fr .8fr 1.2fr;gap:8px;align-items:center;width:100%;padding:11px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--text);font-size:14px;text-align:left;font-variant-numeric:tabular-nums}
+.db-income-row.head{border-top:0;background:#ffffff06;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.db-income-row.total{background:#ffffff06;font-weight:700}
+.db-income-row.has{cursor:pointer}
+.db-income-row.has:hover{background:#4fd08a0a}
+.db-income-row.active{background:#4fd08a14;box-shadow:inset 3px 0 var(--green)}
+.db-income-row.empty{color:var(--faint);opacity:1;cursor:default}
+.db-income-row .on{display:flex;align-items:center;gap:5px;color:#7fe0aa;font-weight:700}
+.db-income-row .off{display:flex;align-items:center;gap:5px;color:var(--faint);font-weight:700}
+.db-income-row>span:last-child{display:grid;gap:1px}
+.db-income-row small{font-size:11px;color:var(--faint)}
+.db-income-earned{display:grid;gap:5px}
+.db-income-earned i{display:block;height:4px;border-radius:4px;background:linear-gradient(90deg,var(--green),#2f9e68);min-width:3px}
+.db-select{height:36px;padding:0 10px;border-radius:10px;border:1px solid var(--line2);background:#050c15;color:var(--text);font:inherit;font-size:13px}
+.db-pay-list{display:grid;gap:14px}
+.db-pay-group{display:grid;gap:6px}
+.db-pay-day{display:flex;justify-content:space-between;padding:0 4px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+.db-pay-day b{color:#7fe0aa}
+.db-pay-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:11px 14px;border-radius:13px;background:#ffffff05;border:1px solid var(--line)}
+.db-pay-level{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#4fd08a1a;color:#7fe0aa;font:800 13px "Manrope"}
+.db-pay-from{display:grid;gap:2px;min-width:0}
+.db-pay-from small{font-size:12px;color:var(--muted)}
+.db-pay-row a{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:var(--muted)}
+.db-pay-row a:hover{background:#ffffff0d;color:#fff}
+.db-pay-amount{font:800 16px "Manrope";color:#7fe0aa;font-variant-numeric:tabular-nums}
+.db-kv .db-link-btn{display:inline-flex;margin-left:8px}
+@media(max-width:860px){
+  .db-income-hero{grid-template-columns:1fr;padding:24px 20px}
+  .db-income-row{grid-template-columns:.8fr .6fr 1.4fr .7fr;font-size:13px;padding:11px 10px}
+  .db-income-row>span:nth-child(5){display:none}
+}
+@media(max-width:560px){
+  .db-income-chart{gap:3px;height:120px}
+  .db-pay-row{grid-template-columns:auto 1fr auto;padding:10px 12px;gap:10px}
+  .db-pay-row a{display:none}
+  .db-tabbar button{font-size:10px}
+}

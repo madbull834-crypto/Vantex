@@ -7,7 +7,7 @@ import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, BadgeDollarSign, BriefcaseBusiness, Check,
   ChevronDown, CircleAlert, CircleCheck, Coins, Copy, Crown, ExternalLink, Gift, LayoutDashboard, Link2,
   Lock, MessageCircle, Network, Plus, QrCode, RefreshCw, Repeat, Send, Share2, Sparkles, TrendingUp, Unlock,
-  ChevronRight, Loader2, UserPlus, Users, Wallet, X
+  ChevronRight, Layers, Loader2, UserPlus, Users, Wallet, X
 } from "lucide-react";
 
 const DAY = 86_400;
@@ -21,6 +21,22 @@ const salaryTiers = [{ need: 1000, pay: 25 }, { need: 2000, pay: 50 }, { need: 5
 
 const money = (value, digits = 2) => Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const short = (address) => address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
+const timeLabel = (seconds) => new Date(seconds * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+const dayKey = (seconds) => { const d = new Date(seconds * 1000); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+const dayHeading = (seconds) => {
+  const key = dayKey(seconds); const today = Date.now() / 1000;
+  if (key === dayKey(today)) return "Today";
+  if (key === dayKey(today - DAY)) return "Yesterday";
+  return new Date(seconds * 1000).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+};
+const ago = (seconds, now) => {
+  const diff = Math.max(0, now - seconds);
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < DAY) return `${Math.floor(diff / 3600)} h ago`;
+  if (diff < 30 * DAY) return `${Math.floor(diff / DAY)} d ago`;
+  return dateLabel(seconds);
+};
 const dateLabel = (seconds) => new Date(seconds * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 // Cumulative Monday–Friday seconds since the Unix epoch (same rule as the contract).
@@ -56,7 +72,7 @@ export default function Dashboard(props) {
     setSelectedPlan, amount, setAmount, projected, transact, tokenDecimals,
     registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer, compoundPlan, openRegistration, levels = [],
-    refresh, clearNotice, onSwitchAccount, onHome, loadTeam
+    refresh, clearNotice, onSwitchAccount, onHome, loadTeam, loadRoiIncome
   } = props;
 
   const [section, setSection] = useState("overview");
@@ -76,6 +92,20 @@ export default function Dashboard(props) {
   useEffect(() => {
     if (section === "team" && data.member?.registered) fetchTeam();
   }, [section, account, data.member?.registered]);
+  // ROI-on-ROI income (totals per level and payment history), loaded when its tab is opened.
+  const [income, setIncome] = useState({ status: "idle", data: null, error: "" });
+  const [incomeLevel, setIncomeLevel] = useState(0);
+  const [incomeShown, setIncomeShown] = useState(30);
+  const fetchIncome = async () => {
+    if (!account || !loadRoiIncome) return;
+    setIncome(current => ({ status: "loading", data: current.data, error: "" }));
+    try { setIncome({ status: "ready", data: await loadRoiIncome(account), error: "" }); }
+    catch { setIncome(current => ({ status: "error", data: current.data, error: "Couldn't load your ROI-on-ROI income right now. Check your connection and try again." })); }
+  };
+  useEffect(() => {
+    if (section === "income" && data.member?.registered) fetchIncome();
+  }, [section, account, data.member?.registered, data.referralEarnings]);
+  useEffect(() => { setIncome({ status: "idle", data: null, error: "" }); setIncomeLevel(0); setIncomeShown(30); }, [account]);
   const loadedAt = useRef(Date.now() / 1000);
   const now = useNow();
   const member = data.member;
@@ -149,7 +179,7 @@ export default function Dashboard(props) {
   const stepsDone = steps.filter(step => step.done).length;
   const nextStep = steps.find(step => !step.done);
 
-  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); if (section === "team") await fetchTeam(); } finally { setTimeout(() => setRefreshing(false), 400); } };
+  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); if (section === "team") await fetchTeam(); if (section === "income") await fetchIncome(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   const copy = async (text, key) => { try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 1800); } catch {} };
   const shareText = "Join my team on Vantex Capital:";
   const nativeShare = async () => { try { await navigator.share({ title: "Vantex Capital", text: shareText, url: referralLink }); } catch {} };
@@ -159,9 +189,10 @@ export default function Dashboard(props) {
     ["overview", LayoutDashboard, "Overview"],
     ["portfolio", BriefcaseBusiness, "Portfolio"],
     ["team", Network, "Team"],
+    ["income", Layers, "ROI on ROI"],
     ["rewards", BadgeDollarSign, "Rewards"]
   ];
-  const titles = { overview: `${greeting()}.`, portfolio: "Portfolio", team: "Your team", rewards: "Rewards" };
+  const titles = { overview: `${greeting()}.`, portfolio: "Portfolio", team: "Your team", income: "ROI on ROI income", rewards: "Rewards" };
 
   // ---------- Reusable blocks ----------
   const ClaimCard = <section className="db-hero">
@@ -444,13 +475,144 @@ export default function Dashboard(props) {
           <button className={data.rewardMode === 1 ? "active" : ""} disabled={busy || !registered || data.rewardMode === 1} onClick={() => transact("setRewardMode", 1)}><Repeat size={18}/><b>Auto Compound</b><span>Reinvested Monday–Friday</span>{data.rewardMode === 1 && <CircleCheck size={16} className="db-mode-check"/>}</button>
         </div>
         <div className="db-kv"><span>Total claimed ROI</span><b>${money(totalClaimed)}</b></div>
-        <div className="db-kv"><span>Team (ROI-on-ROI) earnings</span><b>${money(data.referralEarnings)}</b></div>
+        <div className="db-kv"><span>Team (ROI-on-ROI) earnings</span><b>${money(data.referralEarnings)} <button className="db-link-btn" onClick={() => setSection("income")}>Details <ArrowUpRight size={13}/></button></b></div>
       </section>
       {SalaryCard}
     </div>
   </>;
 
-  const views = { overview, portfolio, team: teamView, rewards };
+  // ---------- ROI on ROI income ----------
+  const incomeData = income.data;
+  const incomeLoading = income.status === "loading" && !incomeData;
+  const incomeTotal = incomeData ? incomeData.total : Number(data.referralEarnings || 0);
+  const payments = incomeData?.payments || [];
+  const levelIncome = Array.from({ length: 15 }, (_, i) => incomeData?.levels?.[i] || { total: 0, lastPaidAt: 0, payments: 0 });
+  const trackedTotal = levelIncome.reduce((sum, l) => sum + l.total, 0);
+  const untracked = Math.max(0, incomeTotal - trackedTotal);
+  const sumSince = (seconds) => payments.filter(p => p.paidAt >= seconds).reduce((sum, p) => sum + p.amount, 0);
+  const startOfToday = (() => { const d = new Date(now * 1000); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; })();
+  const earnedToday = sumSince(startOfToday);
+  const earned7 = sumSince(startOfToday - 6 * DAY);
+  const earned30 = sumSince(startOfToday - 29 * DAY);
+  const lastPayment = payments[0];
+  const bestLevelIndex = levelIncome.reduce((best, l, i) => l.total > levelIncome[best].total ? i : best, 0);
+  const chartDays = Array.from({ length: 14 }, (_, i) => {
+    const start = startOfToday - (13 - i) * DAY;
+    const amount = payments.filter(p => p.paidAt >= start && p.paidAt < start + DAY).reduce((sum, p) => sum + p.amount, 0);
+    return { start, amount };
+  });
+  const chartMax = Math.max(...chartDays.map(d => d.amount), 0);
+  const filteredPayments = incomeLevel ? payments.filter(p => p.level === incomeLevel) : payments;
+  const visiblePayments = filteredPayments.slice(0, incomeShown);
+  const paymentGroups = visiblePayments.reduce((groups, p) => {
+    const key = dayKey(p.paidAt); const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(p); else groups.push({ key, heading: dayHeading(p.paidAt), items: [p] });
+    return groups;
+  }, []);
+  const historySupported = incomeData ? incomeData.supported : true;
+
+  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>When people in your team claim or compound their profit, you earn a share of it from up to 15 levels deep.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
+    <section className="db-income-hero">
+      <div className="db-income-main">
+        <span className="db-label"><Layers size={14}/> Total ROI on ROI earned</span>
+        <strong className="db-hero-value">${money(incomeTotal)}</strong>
+        <p>{lastPayment
+          ? <>Last paid <b>${money(lastPayment.amount)}</b> from level {lastPayment.level} · {ago(lastPayment.paidAt, now)}</>
+          : incomeTotal > 0 ? "Paid straight to your wallet each time your team claims or compounds." : "You'll earn here when members in your unlocked levels claim or compound their profit."}</p>
+      </div>
+      <div className="db-income-stats">
+        <div><span>Today</span><b>${money(earnedToday)}</b></div>
+        <div><span>Last 7 days</span><b>${money(earned7)}</b></div>
+        <div><span>Last 30 days</span><b>${money(earned30)}</b></div>
+        <div><span>Levels unlocked</span><b>{data.level} <small>of 15</small></b></div>
+      </div>
+      <div className="db-hero-glow"/>
+    </section>
+
+    {income.status === "error" && <p className="db-inline-warn"><CircleAlert size={14}/> {income.error} <button onClick={fetchIncome}>Try again</button></p>}
+    {incomeData && !historySupported && <div className="db-banner"><CircleAlert size={18}/><span><b>History isn't available yet.</b> Your total is shown above. Per-level totals and payment dates appear once the contract upgrade is deployed.</span></div>}
+
+    <div className="db-grid even">
+      <section className="db-card">
+        <div className="db-card-head">
+          <div><span className="db-eyebrow">When</span><h2>Last 14 days</h2></div>
+          <span className="db-chip green">${money(chartDays.reduce((sum, d) => sum + d.amount, 0))}</span>
+        </div>
+        <div className="db-income-chart" role="img" aria-label="ROI on ROI earned per day over the last 14 days">
+          {chartDays.map(d => <div key={d.start} className={d.start === startOfToday ? "today" : ""} title={`${dateLabel(d.start)}: $${money(d.amount)}`}>
+            <i style={{ height: chartMax ? `${Math.max(d.amount ? 6 : 0, d.amount / chartMax * 100)}%` : 0 }}/>
+            <span>{new Date(d.start * 1000).toLocaleDateString("en-US", { day: "numeric" })}</span>
+          </div>)}
+        </div>
+        <p className="db-fine">{chartMax ? "Tap or hover a bar to see that day's amount. Payments only happen when your team claims or compounds, which is usually Monday to Friday." : "No ROI on ROI in the last 14 days yet."}</p>
+      </section>
+
+      <section className="db-card">
+        <div className="db-card-head"><div><span className="db-eyebrow">How it works</span><h2>Where it comes from</h2></div></div>
+        <div className="db-kv"><span>Your best level</span><b>{levelIncome[bestLevelIndex].total > 0 ? `Level ${bestLevelIndex + 1} · $${money(levelIncome[bestLevelIndex].total)}` : "–"}</b></div>
+        <div className="db-kv"><span>Payments received</span><b>{(incomeData?.count || 0).toLocaleString()}</b></div>
+        <div className="db-kv"><span>Levels that paid you</span><b>{levelIncome.filter(l => l.payments > 0).length} of 15</b></div>
+        {untracked > 0.000001 && <div className="db-kv"><span>Earned before history tracking</span><b>${money(untracked)}</b></div>}
+        <p className="db-muted">Each time a member in your team claims or compounds, you get a percentage of the <b>profit half</b> of that ROI from their level. You only earn from levels you've unlocked at that moment.</p>
+        {nextLevelTier && <button className="db-link-btn" onClick={() => setSection("team")}>Unlock levels {data.level + 1}–{nextLevelTier.upTo} at ${nextLevelTier.need.toLocaleString()} balanced volume <ArrowUpRight size={13}/></button>}
+      </section>
+    </div>
+
+    <section className="db-card">
+      <div className="db-card-head">
+        <div><span className="db-eyebrow">Which level</span><h2>Earnings by level</h2></div>
+        <button className="db-link-btn" onClick={fetchIncome} disabled={income.status === "loading"}>{income.status === "loading" ? <><Loader2 size={14} className="db-spin"/> Loading</> : <><RefreshCw size={14}/> Refresh</>}</button>
+      </div>
+      <div className="db-income-table" role="table" aria-label="ROI on ROI earnings per level">
+        <div className="db-income-row head" role="row"><span>Level</span><span>Rate</span><span>Earned</span><span>Payments</span><span>Last paid</span></div>
+        {levelIncome.map((l, index) => {
+          const unlocked = index < data.level;
+          const share = trackedTotal ? l.total / trackedTotal * 100 : 0;
+          const active = incomeLevel === index + 1;
+          return <button key={index} role="row" className={`db-income-row ${l.payments ? "has" : "empty"} ${active ? "active" : ""}`} disabled={!l.payments} onClick={() => { setIncomeLevel(active ? 0 : index + 1); setIncomeShown(30); }} title={l.payments ? "Show this level's payments" : ""}>
+            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} L{index + 1}</span>
+            <span>{levels[index]}%</span>
+            <span className="db-income-earned"><b>{incomeLoading ? "…" : `$${money(l.total)}`}</b>{share > 0 && <i style={{ width: `${share}%` }}/>}</span>
+            <span>{l.payments || "–"}</span>
+            <span>{l.lastPaidAt ? <>{dateLabel(l.lastPaidAt)}<small>{timeLabel(l.lastPaidAt)}</small></> : "–"}</span>
+          </button>;
+        })}
+        <div className="db-income-row total" role="row"><span>Total</span><span/><span><b>${money(trackedTotal)}</b></span><span>{levelIncome.reduce((sum, l) => sum + l.payments, 0)}</span><span/></div>
+      </div>
+      <p className="db-fine">Rates are a share of the profit half of your team's ROI. Lock icons are levels you haven't unlocked yet. Tap a level to see only its payments.</p>
+    </section>
+
+    <section className="db-card">
+      <div className="db-card-head">
+        <div><span className="db-eyebrow">History</span><h2>{incomeLevel ? `Level ${incomeLevel} payments` : "All payments"}</h2></div>
+        <select className="db-select" value={incomeLevel} onChange={event => { setIncomeLevel(Number(event.target.value)); setIncomeShown(30); }} aria-label="Filter by level">
+          <option value={0}>All levels</option>
+          {levelIncome.map((l, index) => <option key={index} value={index + 1}>Level {index + 1}{l.payments ? ` (${l.payments})` : ""}</option>)}
+        </select>
+      </div>
+      {incomeLoading ? <div className="db-direct-list">{[0, 1, 2].map(i => <div key={i} className="db-direct-row skeleton"/>)}</div>
+        : !filteredPayments.length ? <div className="db-direct-empty">
+            <span className="db-slot-empty"><Layers size={18}/></span>
+            <div><b>{incomeLevel ? `No payments from level ${incomeLevel} yet` : "No ROI on ROI payments yet"}</b><small>Payments appear here as soon as someone in your unlocked levels claims or compounds.</small></div>
+            {incomeLevel > 0 && <button className="db-btn glass small" onClick={() => setIncomeLevel(0)}>Show all levels</button>}
+          </div>
+        : <div className="db-pay-list">
+            {paymentGroups.map(group => <div key={group.key} className="db-pay-group">
+              <div className="db-pay-day"><span>{group.heading}</span><b>+${money(group.items.reduce((sum, p) => sum + p.amount, 0))}</b></div>
+              {group.items.map(p => <div key={p.id} className="db-pay-row">
+                <span className="db-pay-level">L{p.level}</span>
+                <div className="db-pay-from"><b>From {short(p.source)}</b><small>{timeLabel(p.paidAt)} · {levels[p.level - 1]}% of their profit</small></div>
+                <a href={EXPLORER + p.source} target="_blank" rel="noreferrer" aria-label="View member on BscScan"><ExternalLink size={13}/></a>
+                <b className="db-pay-amount">+${money(p.amount, p.amount < 0.01 ? 4 : 2)}</b>
+              </div>)}
+            </div>)}
+            {filteredPayments.length > incomeShown && <button className="db-btn glass full" onClick={() => setIncomeShown(n => n + 30)}>Show more ({filteredPayments.length - incomeShown} left)</button>}
+            {incomeData?.truncated && filteredPayments.length <= incomeShown && <p className="db-fine">Showing your latest {payments.length.toLocaleString()} payments. Older ones are included in the level totals above.</p>}
+          </div>}
+    </section>
+  </>;
+
+  const views = { overview, portfolio, team: teamView, income: income_, rewards };
 
   return <div className="db">
     <aside className="db-sidebar">
