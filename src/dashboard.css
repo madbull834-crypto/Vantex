@@ -291,3 +291,99 @@
 .db-hero-sub{color:#8fa0ae;font-weight:500}
 .db-position-stats small{font-size:11px;color:var(--faint)}
 .db-stats small b{font-weight:700}
+/* Direct team */
+.db-direct-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.db-direct-item{display:grid;gap:14px;padding:16px;border-radius:16px;background:#ffffff05;border:1px solid var(--line)}
+.db-direct-item.skeleton{min-height:150px;background:linear-gradient(90deg,#ffffff05,#ffffff0d,#ffffff05);background-size:200% 100%;animation:db-shimmer 1.2s linear infinite}
+.db-direct-item.open{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-style:dashed}
+.db-direct-item.open>div{flex:1;min-width:160px;display:grid;gap:3px}
+.db-direct-item.open span{font-size:12px;color:var(--muted)}
+.db-direct-item.open b{font-size:15px}
+.db-direct-item.open small{font-size:12px;color:var(--faint)}
+.db-direct-top{display:flex;align-items:center;gap:12px}
+.db-direct-top>div{flex:1;min-width:0;display:grid;gap:3px}
+.db-direct-top span{font-size:12px;color:var(--muted)}
+.db-direct-top b{font-size:16px}
+.db-direct-top em{font-style:normal;font-size:12px;font-weight:700;padding:5px 10px;border-radius:99px}
+.db-direct-top em.on{background:#4fd08a1a;color:#7fe0aa}
+.db-direct-top em.off{background:#ffffff0d;color:var(--muted)}
+.db-direct-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.db-direct-stats div{display:grid;gap:3px;padding:10px 12px;border-radius:12px;background:#ffffff05}
+.db-direct-stats span{font-size:12px;color:var(--faint)}
+.db-direct-stats b{font-size:15px}
+.db-direct-actions{display:flex;gap:8px;flex-wrap:wrap}
+.db-direct-actions button,.db-direct-actions a{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:9px;border:1px solid var(--line2);background:#ffffff06;font-size:12px;font-weight:600}
+.db-direct-actions button:hover,.db-direct-actions a:hover{border-color:#ffffff33}
+
+/* Team by level */
+.db-team-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.db-team-summary div{display:grid;gap:3px;padding:12px 14px;border-radius:14px;background:#ffffff05;border:1px solid var(--line)}
+.db-team-summary span{font-size:12px;color:var(--muted)}
+.db-team-summary b{font:800 20px "Manrope"}
+.db-level-table{display:grid;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.db-level-row{display:grid;grid-template-columns:1fr 1fr .8fr .8fr 1.1fr 1.3fr;gap:8px;align-items:center;width:100%;padding:12px 14px;border:0;border-top:1px solid var(--line);background:none;color:var(--text);font-size:14px;text-align:left}
+.db-level-row.head{border-top:0;background:#ffffff06;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.db-level-row.has{cursor:pointer}
+.db-level-row.has:hover,.db-level-row.open{background:#f2c35a0a}
+.db-level-row.empty{color:var(--faint);cursor:default;opacity:1}
+.db-level-row>span:first-child{display:flex;align-items:center;gap:6px;font-weight:700}
+.db-level-chev{color:var(--faint);transition:transform .15s}
+.db-level-row.empty .db-level-chev{visibility:hidden}
+.db-level-row.open .db-level-chev{transform:rotate(90deg);color:var(--gold)}
+.db-level-row .on{display:flex;align-items:center;gap:5px;color:#7fe0aa;font-weight:700}
+.db-level-row .off{display:flex;align-items:center;gap:5px;color:var(--faint)}
+.db-level-members{display:grid;gap:6px;padding:10px 14px 14px 34px;background:#ffffff03;border-top:1px solid var(--line)}
+.db-level-member{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:11px;background:#ffffff06}
+.db-level-member>div{flex:1;min-width:0;display:grid;gap:2px}
+.db-level-member b{font-size:13px}
+.db-level-member small{font-size:11px;color:var(--faint)}
+.db-level-member .dep{font-size:13px;font-weight:700;color:#7fe0aa}
+.db-level-member .nodep{font-size:12px;color:var(--faint)}
+.db-level-member button{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;border:1px solid var(--line2);background:none}
+.db-spin{animation:db-spin .8s linear infinite}
+@keyframes db-shimmer{to{background-position:-200% 0}}
+@media(max-width:860px){.db-team-summary{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){
+  .db-direct-grid{grid-template-columns:1fr}
+  .db-level-row{grid-template-columns:.8fr .9fr .7fr .7fr 1.2fr;font-size:13px;padding:11px 10px}
+  .db-level-row>span:nth-child(5){display:none}
+  .db-level-members{padding-left:14px}
+}
+/* Direct referrals list */
+.db-direct-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.db-direct-summary div{display:grid;gap:3px;padding:12px 14px;border-radius:14px;background:#ffffff05;border:1px solid var(--line)}
+.db-direct-summary span{font-size:12px;color:var(--muted)}
+.db-direct-summary b{font:800 20px "Manrope"}
+.db-direct-tools{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.db-direct-tools input{flex:1;min-width:200px;height:40px;padding:0 12px;border-radius:11px;border:1px solid var(--line2);background:#050c15;color:var(--text);outline:none}
+.db-direct-tools input:focus{border-color:#f2c35a88}
+.db-direct-filter{display:flex;gap:4px;padding:4px;border-radius:11px;background:#ffffff08}
+.db-direct-filter button{height:32px;padding:0 12px;border:0;border-radius:8px;background:none;color:var(--muted);font-size:13px;font-weight:600}
+.db-direct-filter button.active{background:#ffffff14;color:var(--text)}
+.db-direct-list{display:grid;gap:8px}
+.db-direct-row{display:grid;grid-template-columns:28px 36px 1fr auto auto auto;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:#ffffff05;border:1px solid var(--line)}
+.db-direct-row.skeleton{height:62px;display:block;background:linear-gradient(90deg,#ffffff05,#ffffff0d,#ffffff05);background-size:200% 100%;animation:db-shimmer 1.2s linear infinite}
+.db-direct-num{font-size:12px;font-weight:700;color:var(--faint);text-align:center}
+.db-direct-id{min-width:0;display:grid;gap:3px}
+.db-direct-id b{font-size:14px}
+.db-direct-id small{font-size:12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-direct-dep{display:grid;gap:2px;text-align:right}
+.db-direct-dep span{font-size:11px;color:var(--faint)}
+.db-direct-dep b{font-size:14px}
+.db-direct-row em{font-style:normal;font-size:12px;font-weight:700;padding:5px 10px;border-radius:99px;white-space:nowrap}
+.db-direct-row em.on{background:#4fd08a1a;color:#7fe0aa}
+.db-direct-row em.off{background:#ffffff0d;color:var(--muted)}
+.db-direct-row .db-direct-actions{display:flex;gap:6px}
+.db-direct-row .db-direct-actions button,.db-direct-row .db-direct-actions a{width:32px;height:32px;padding:0;justify-content:center}
+.db-direct-empty{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px;border-radius:14px;border:1px dashed var(--line2)}
+.db-direct-empty>div{flex:1;min-width:200px;display:grid;gap:3px}
+.db-direct-empty small{font-size:12px;color:var(--faint)}
+@media(max-width:640px){
+  .db-direct-summary{grid-template-columns:1fr 1fr}
+  .db-direct-row{grid-template-columns:36px 1fr auto;row-gap:8px}
+  .db-direct-num{display:none}
+  .db-direct-dep{grid-column:2;text-align:left;display:flex;gap:6px;align-items:baseline}
+  .db-direct-row em{grid-column:3;grid-row:1}
+  .db-direct-row .db-direct-actions{grid-column:3;grid-row:2;justify-content:flex-end}
+}
+@media(max-width:640px){.db-direct-summary div:last-child{grid-column:1/-1}}

@@ -39,6 +39,12 @@ const VANTEX_ABI = [
   "error AlreadyRegistered()",
   "error InvalidAmount()",
   "error InvalidReferrer()",
+  "error InvalidSponsor()",
+  "function sponsorOf(address) view returns (address)",
+  "function directReferralCount(address) view returns (uint256)",
+  "function directReferralsOf(address account,uint256 offset,uint256 limit) view returns (address[])",
+  "function registerWithSponsor(address sponsor,address referrer,uint8 leg,uint8 split,uint8 mode)",
+  "function registerAndInvestWithSponsor(address sponsor,address referrer,uint8 leg,uint8 split,uint8 mode,uint256 amount,uint8 plan,(uint256 deadline,uint8 v,bytes32 r,bytes32 s) permit)",
   "error LegOccupied()",
   "error Paused()",
   "error TooManyPositions()",
@@ -85,6 +91,7 @@ const walletErrorCodeIsNetwork = (error) => error?.code === "WRONG_NETWORK";
 const friendlyError = (error) => {
   if (error?.code === "ACTION_REJECTED") return "Transaction cancelled in your wallet.";
   const revertName = error?.revert?.name;
+  if (revertName === "InvalidSponsor") return "Your referrer couldn't be credited for this spot. Refresh and try again.";
   if (revertName === "InvalidReferrer") return "No valid sponsor placement was found. Refresh and try registration again.";
   if (revertName === "LegOccupied") return "That sponsor placement was just taken. Click register again to select another open placement.";
   if (revertName === "AlreadyRegistered") return "This wallet is already registered. Refreshing your account data should unlock investing.";
@@ -257,11 +264,10 @@ function App() {
         setRegistrationStage("placing");
         const placement = await selectRegistrationPlacement(contract);
         setReferrer(placement.referrer); setLeg(placement.leg);
-        const args = [placement.referrer, placement.leg, split, joinMode];
         try {
-          await contract.registerWithMode.estimateGas(...args);
+          await registerCall(contract, placement, joinMode, true);
           setRegistrationStage("wallet");
-          const tx = await contract.registerWithMode(...args);
+          const tx = await registerCall(contract, placement, joinMode);
           setRegistrationTx(tx.hash);
           setRegistrationStage("mining");
           await tx.wait();
@@ -286,8 +292,80 @@ function App() {
     } finally { setBusy(false); }
   };
 
+  // True once the live contract is confirmed to have the sponsor upgrade.
+  const sponsorSupport = useRef(false);
+  const supportsSponsor = async (reader) => {
+    if (sponsorSupport.current) return true;
+    try { await reader.directReferralCount(ZERO); sponsorSupport.current = true; return true; } catch { return false; }
+  };
+  // Registers crediting the inviter as sponsor when the contract supports it; otherwise uses the original function.
+  const registerCall = async (contract, placement, mode, estimateOnly = false) => {
+    const withSponsor = await supportsSponsor(contract);
+    const fn = withSponsor ? contract.registerWithSponsor : contract.registerWithMode;
+    const args = withSponsor
+      ? [inviterRef.current.ref || ZERO, placement.referrer, placement.leg, split, mode]
+      : [placement.referrer, placement.leg, split, mode];
+    return estimateOnly ? fn.estimateGas(...args) : fn(...args);
+  };
+
   // Read-only contract access that also works before a wallet is connected.
   const readContract = () => new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, provider || new ethers.JsonRpcProvider(BSC_RPC));
+
+  // Runs async work over a list in small parallel batches so public RPCs don't rate-limit us.
+  const mapInChunks = async (items, size, fn) => {
+    const out = [];
+    for (let i = 0; i < items.length; i += size) out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
+    return out;
+  };
+
+  // Walks the member's placement tree level by level (up to 15 levels, the ROI-on-ROI depth).
+  // Each member records which of the root's organizations (A = 0, B = 1) they sit in.
+  const TEAM_LIMIT = 1500;
+  const loadTeam = async (root) => {
+    if (!root || !isConfigured) return null;
+    const reader = readContract();
+    const levels = [];
+    let frontier = [{ address: root, side: null }];
+    let total = 0; let truncated = false;
+    for (let depth = 1; depth <= 15 && frontier.length; depth++) {
+      const legs = await mapInChunks(frontier, 40, node => Promise.all([reader.directLeg(node.address, 0), reader.directLeg(node.address, 1)]));
+      const next = [];
+      frontier.forEach((node, i) => [0, 1].forEach(sideIndex => {
+        const child = legs[i][sideIndex];
+        if (child !== ZERO) next.push({ address: child, parent: node.address, side: depth === 1 ? sideIndex : node.side, slot: sideIndex, level: depth });
+      }));
+      if (!next.length) break;
+      const infos = await mapInChunks(next, 40, member => reader.members(member.address));
+      next.forEach((member, i) => { member.deposit = Number(ethers.formatUnits(infos[i].personalBusiness, TOKEN_DECIMALS)); });
+      levels.push(next);
+      total += next.length;
+      if (total >= TEAM_LIMIT) { truncated = true; break; }
+      frontier = next;
+    }
+    // Direct referrals = members who joined with this member's invite (link or wallet address).
+    const placed = new Map(levels.flat().map(member => [member.address.toLowerCase(), member]));
+    let directs; let directsSource = "placement";
+    if (await supportsSponsor(reader)) {
+      directsSource = "sponsor";
+      const count = Number(await reader.directReferralCount(root));
+      const addresses = [];
+      for (let offset = 0; offset < Math.min(count, TEAM_LIMIT); offset += 200) addresses.push(...await reader.directReferralsOf(root, offset, 200));
+      // Members who joined before the upgrade have no sponsor record: their placement parent counts as sponsor.
+      const legacy = await mapInChunks(levels[0] || [], 40, async member => (await reader.sponsorOf(member.address)) === ZERO ? member.address : null);
+      const all = [...legacy.filter(Boolean), ...addresses];
+      const unique = [...new Map(all.map(address => [address.toLowerCase(), address])).values()];
+      const missing = unique.filter(address => !placed.has(address.toLowerCase()));
+      const missingInfo = await mapInChunks(missing, 40, address => reader.members(address));
+      const extra = new Map(missing.map((address, i) => [address.toLowerCase(), Number(ethers.formatUnits(missingInfo[i].personalBusiness, TOKEN_DECIMALS))]));
+      directs = unique.map(address => {
+        const inTree = placed.get(address.toLowerCase());
+        return inTree ? { ...inTree } : { address, deposit: extra.get(address.toLowerCase()) || 0, level: null, side: null, parent: null };
+      });
+    } else {
+      directs = (levels[0] || []).map(member => ({ ...member }));
+    }
+    return { levels, total, truncated, directs, directsSource, loadedAt: Date.now() };
+  };
 
   // Validates a referral link or a plain referrer wallet address without applying it.
   // Returns { address, leg, slots } on success or { error } with a plain-language reason.
@@ -356,7 +434,7 @@ function App() {
       try {
         const contract = new ethers.Contract(CONTRACT_ADDRESS, VANTEX_ABI, await provider.getSigner());
         const [gas, fees] = await Promise.all([
-          contract.registerWithMode.estimateGas(referrer, leg, split, registrationMode),
+          registerCall(contract, { referrer, leg }, registrationMode, true),
           provider.getFeeData()
         ]);
         const price = fees.gasPrice || fees.maxFeePerGas || 0n;
@@ -501,7 +579,7 @@ function App() {
           if (!currentMember.registered) {
             placement = await selectRegistrationPlacement(contract);
             setNotice("Current testnet contracts require registration confirmation…");
-            const registration = await contract.registerWithMode(placement.referrer, placement.leg, split, registrationMode);
+            const registration = await registerCall(contract, placement, registrationMode);
             await registration.wait();
           }
           const allowance = await token.allowance(account, CONTRACT_ADDRESS);
@@ -538,7 +616,9 @@ function App() {
           const placement = await selectRegistrationPlacement(contract);
           setReferrer(placement.referrer);
           setLeg(placement.leg);
-          tx = await contract.registerAndInvestWithPermitAndMode(placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, deadline, v, r, s);
+          tx = await supportsSponsor(contract)
+            ? await contract.registerAndInvestWithSponsor(inviterRef.current.ref || ZERO, placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, { deadline, v, r, s })
+            : await contract.registerAndInvestWithPermitAndMode(placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, deadline, v, r, s);
         }
       } else if (kind === "compoundRoi") {
         const pendingAmount = Number(data.pending);
@@ -631,7 +711,7 @@ function App() {
     setReferrer, leg, setLeg, split, setSplit, registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer: inviter.ref,
     compoundPlan, openRegistration, levels,
-    refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount
+    refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount, loadTeam
   }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>{wizard}</>;
 
   const startInvesting = () => {

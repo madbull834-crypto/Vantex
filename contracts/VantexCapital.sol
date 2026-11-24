@@ -42,6 +42,13 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         Plan plan;
     }
 
+    struct PermitSignature {
+        uint256 deadline;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+
     struct Member {
         address referrer;
         uint128 personalBusiness;
@@ -76,6 +83,11 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     mapping(address => RewardMode) public rewardMode;
     mapping(address => uint256) public lastAutoCompoundDay;
 
+    /// @notice The member whose invite link or wallet address the account joined with. After
+    ///         spillover this can differ from `members[account].referrer`, the placement parent.
+    mapping(address => address) public sponsorOf;
+    mapping(address => address[]) private _directReferrals;
+
     error Paused();
     error InvalidAmount();
     error InvalidReferrer();
@@ -88,6 +100,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     error AutoCompoundDisabled();
     error OutsideEarningDay();
     error AlreadyProcessed();
+    error InvalidSponsor();
 
     event Registered(address indexed member, address indexed referrer, Leg leg, Split split);
     event Invested(address indexed member, uint256 indexed positionId, uint256 amount, Plan plan, uint16 dailyRateBps, uint40 endsAt);
@@ -98,6 +111,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     event SalaryClaimed(address indexed member, uint8 rank, uint8 cycle, uint256 amount);
     event RewardsFunded(address indexed funder, uint256 amount);
     event PauseSet(bool paused);
+    event Sponsored(address indexed member, address indexed sponsor);
     event RewardModeSet(address indexed member, RewardMode mode);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -127,11 +141,11 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function register(address referrer, Leg leg, Split split) external whenNotPaused {
-        _register(msg.sender, referrer, leg, split, RewardMode.ROI);
+        _register(msg.sender, referrer, referrer, leg, split, RewardMode.ROI);
     }
 
     function registerWithMode(address referrer, Leg leg, Split split, RewardMode mode) external whenNotPaused {
-        _register(msg.sender, referrer, leg, split, mode);
+        _register(msg.sender, referrer, referrer, leg, split, mode);
     }
 
     function invest(uint256 amount, Plan plan) external nonReentrant whenNotPaused {
@@ -161,7 +175,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         bytes32 r,
         bytes32 s
     ) external nonReentrant whenNotPaused {
-        _register(msg.sender, referrer, leg, split, RewardMode.ROI);
+        _register(msg.sender, referrer, referrer, leg, split, RewardMode.ROI);
         IERC20Permit(address(paymentToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
         _invest(msg.sender, amount, plan);
     }
@@ -178,9 +192,50 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         bytes32 r,
         bytes32 s
     ) external nonReentrant whenNotPaused {
-        _register(msg.sender, referrer, leg, split, mode);
+        _register(msg.sender, referrer, referrer, leg, split, mode);
         IERC20Permit(address(paymentToken)).permit(msg.sender, address(this), amount, deadline, v, r, s);
         _invest(msg.sender, amount, plan);
+    }
+
+    /**
+     * @notice Registers under `referrer` (the placement parent) while crediting `sponsor`, the
+     *         member whose invite was used. Pass address(0) as sponsor to credit the referrer.
+     *         The sponsor must be the referrer or one of its uplines (spillover stays in their team).
+     */
+    function registerWithSponsor(address sponsor, address referrer, Leg leg, Split split, RewardMode mode)
+        external
+        whenNotPaused
+    {
+        _register(msg.sender, sponsor, referrer, leg, split, mode);
+    }
+
+    function registerAndInvestWithSponsor(
+        address sponsor,
+        address referrer,
+        Leg leg,
+        Split split,
+        RewardMode mode,
+        uint256 amount,
+        Plan plan,
+        PermitSignature calldata permit
+    ) external nonReentrant whenNotPaused {
+        _register(msg.sender, sponsor, referrer, leg, split, mode);
+        IERC20Permit(address(paymentToken)).permit(msg.sender, address(this), amount, permit.deadline, permit.v, permit.r, permit.s);
+        _invest(msg.sender, amount, plan);
+    }
+
+    /// @notice How many members joined with `account`'s invite (link or wallet address).
+    function directReferralCount(address account) external view returns (uint256) {
+        return _directReferrals[account].length;
+    }
+
+    /// @notice A page of the members who joined with `account`'s invite, in joining order.
+    function directReferralsOf(address account, uint256 offset, uint256 limit) external view returns (address[] memory page) {
+        address[] storage list = _directReferrals[account];
+        if (offset >= list.length) return new address[](0);
+        uint256 end = offset + limit > list.length ? list.length : offset + limit;
+        page = new address[](end - offset);
+        for (uint256 i = offset; i < end; ++i) page[i - offset] = list[i];
     }
 
     function setRewardMode(RewardMode mode) external {
@@ -338,16 +393,23 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         for (uint8 i; i < 5; ++i) if (business >= uint256(salaryBusinessUsd[i]) * unit) rank = i + 1;
     }
 
-    function _register(address account, address referrer, Leg leg, Split split, RewardMode mode) private {
+    function _register(address account, address sponsor, address referrer, Leg leg, Split split, RewardMode mode) private {
         if (members[account].registered) revert AlreadyRegistered();
         if (referrer == address(0) || referrer == account || !members[referrer].registered) revert InvalidReferrer();
         if (directLeg[referrer][leg] != address(0)) revert LegOccupied();
+        if (sponsor == address(0)) sponsor = referrer;
+        if (sponsor != referrer && (sponsor == account || !members[sponsor].registered || !_isUpline(sponsor, referrer))) {
+            revert InvalidSponsor();
+        }
         members[account].registered = true;
         members[account].referrer = referrer;
         members[account].split = split;
         rewardMode[account] = mode;
         directLeg[referrer][leg] = account;
+        sponsorOf[account] = sponsor;
+        _directReferrals[sponsor].push(account);
         emit Registered(account, referrer, leg, split);
+        emit Sponsored(account, sponsor);
         emit RewardModeSet(account, mode);
     }
 
@@ -480,11 +542,19 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         }
     }
 
+    function _isUpline(address candidate, address node) private view returns (bool) {
+        for (uint256 depth; depth < 64 && node != address(0); ++depth) {
+            node = members[node].referrer;
+            if (node == candidate) return true;
+        }
+        return false;
+    }
+
     function _requireBalance(uint256 amount) private view {
         if (paymentToken.balanceOf(address(this)) < amount) revert Insolvent();
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[43] private __gap;
+    uint256[41] private __gap;
 }

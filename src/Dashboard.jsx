@@ -7,7 +7,7 @@ import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, BadgeDollarSign, BriefcaseBusiness, Check,
   ChevronDown, CircleAlert, CircleCheck, Coins, Copy, Crown, ExternalLink, Gift, LayoutDashboard, Link2,
   Lock, MessageCircle, Network, Plus, QrCode, RefreshCw, Repeat, Send, Share2, Sparkles, TrendingUp, Unlock,
-  UserPlus, Users, Wallet, X
+  ChevronRight, Loader2, UserPlus, Users, Wallet, X
 } from "lucide-react";
 
 const DAY = 86_400;
@@ -56,7 +56,7 @@ export default function Dashboard(props) {
     setSelectedPlan, amount, setAmount, projected, transact, tokenDecimals,
     registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer, compoundPlan, openRegistration, levels = [],
-    refresh, clearNotice, onSwitchAccount, onHome
+    refresh, clearNotice, onSwitchAccount, onHome, loadTeam
   } = props;
 
   const [section, setSection] = useState("overview");
@@ -64,6 +64,18 @@ export default function Dashboard(props) {
   const [refreshing, setRefreshing] = useState(false);
   const [copied, setCopied] = useState("");
   const [showQr, setShowQr] = useState(false);
+  // Team tree (direct members and members per level), loaded when the Team tab is opened.
+  const [team, setTeam] = useState({ status: "idle", data: null, error: "" });
+  const [openLevel, setOpenLevel] = useState(null);
+  const fetchTeam = async () => {
+    if (!account || !loadTeam) return;
+    setTeam(current => ({ status: "loading", data: current.data, error: "" }));
+    try { setTeam({ status: "ready", data: await loadTeam(account), error: "" }); }
+    catch { setTeam(current => ({ status: "error", data: current.data, error: "Couldn't load your team right now. Check your connection and try again." })); }
+  };
+  useEffect(() => {
+    if (section === "team" && data.member?.registered) fetchTeam();
+  }, [section, account, data.member?.registered]);
   const loadedAt = useRef(Date.now() / 1000);
   const now = useNow();
   const member = data.member;
@@ -137,7 +149,7 @@ export default function Dashboard(props) {
   const stepsDone = steps.filter(step => step.done).length;
   const nextStep = steps.find(step => !step.done);
 
-  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); } finally { setTimeout(() => setRefreshing(false), 400); } };
+  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); if (section === "team") await fetchTeam(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   const copy = async (text, key) => { try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 1800); } catch {} };
   const shareText = "Join my team on Vantex Capital:";
   const nativeShare = async () => { try { await navigator.share({ title: "Vantex Capital", text: shareText, url: referralLink }); } catch {} };
@@ -298,8 +310,110 @@ export default function Dashboard(props) {
     {InvestCard}
   </div>;
 
-  const team = <>
+  const teamLevels = team.data?.levels || [];
+  const teamMembers = teamLevels.flat();
+  const sideCount = (side) => teamMembers.filter(m => m.side === side).length;
+  const teamDeposits = teamMembers.reduce((sum, m) => sum + m.deposit, 0);
+  const deepestLevel = teamLevels.length;
+  const teamLoading = team.status === "loading" && !team.data;
+
+  const directs = team.data?.directs || [];
+  const directsBySponsor = team.data?.directsSource === "sponsor";
+  const [directFilter, directQuery] = [team.directFilter || "all", (team.directQuery || "").trim().toLowerCase()];
+  const shownDirects = directs.filter(d => (directFilter === "all" || (directFilter === "active" ? d.deposit > 0 : d.deposit <= 0))
+    && (!directQuery || d.address.toLowerCase().includes(directQuery)));
+  const directDeposits = directs.reduce((sum, d) => sum + d.deposit, 0);
+  const placementLabel = (d) => d.level == null ? "Placed deeper in your team"
+    : d.level === 1 ? `Your Organization ${d.side === 0 ? "A" : "B"} spot`
+    : `Org ${d.side === 0 ? "A" : "B"} · level ${d.level} · under ${short(d.parent)}`;
+
+  const DirectTeamCard = <section className="db-card db-direct">
+    <div className="db-card-head">
+      <div><span className="db-eyebrow">Direct team</span><h2>{directsBySponsor ? "People who joined with your link" : "Your direct members"}</h2></div>
+      <span className="db-chip">{teamLoading ? "…" : `${directs.length} ${directs.length === 1 ? "member" : "members"}`}</span>
+    </div>
+    <p className="db-muted">{directsBySponsor
+      ? <>Everyone who joined using your referral link or wallet address. The first two take your Organization A and B spots; the rest are placed lower in your team.</>
+      : <>Members in your two direct spots. After the contract upgrade, this shows everyone who joined with your link, wherever they were placed.</>}</p>
+
+    {directs.length > 0 && <div className="db-direct-summary">
+      <div><span>Joined with your link</span><b>{directs.length}</b></div>
+      <div><span>Active (deposited)</span><b>{directs.filter(d => d.deposit > 0).length}</b></div>
+      <div><span>Their deposits</span><b>${money(directDeposits, 0)}</b></div>
+    </div>}
+
+    {directs.length > 3 && <div className="db-direct-tools">
+      <input value={team.directQuery || ""} onChange={event => setTeam(current => ({ ...current, directQuery: event.target.value }))} placeholder="Search by wallet address" aria-label="Search direct members"/>
+      <div className="db-direct-filter" role="tablist">{[["all", "All"], ["active", "Active"], ["inactive", "No deposit"]].map(([key, label]) =>
+        <button key={key} role="tab" aria-selected={directFilter === key} className={directFilter === key ? "active" : ""} onClick={() => setTeam(current => ({ ...current, directFilter: key }))}>{label}</button>)}</div>
+    </div>}
+
+    {teamLoading ? <div className="db-direct-list">{[0, 1, 2].map(i => <div key={i} className="db-direct-row skeleton"/>)}</div>
+      : !directs.length ? <div className="db-direct-empty">
+          <span className="db-slot-empty"><UserPlus size={18}/></span>
+          <div><b>No one has joined with your link yet</b><small>Share your link or wallet address. New members appear here as soon as they join.</small></div>
+          {referralLink && <button className="db-btn gold small" onClick={() => { copyReferralLink(); setCopied("ref"); setTimeout(() => setCopied(""), 1800); }}>{copied === "ref" ? <><Check size={14}/> Copied</> : <><Copy size={14}/> Copy link</>}</button>}
+        </div>
+      : <div className="db-direct-list">
+          {shownDirects.map((d, index) => <div key={d.address} className="db-direct-row">
+            <span className="db-direct-num">{directs.indexOf(d) + 1}</span>
+            <Avatar address={d.address} size={36}/>
+            <div className="db-direct-id"><b title={d.address}>{short(d.address)}</b><small>{placementLabel(d)}</small></div>
+            <div className="db-direct-dep"><span>Deposited</span><b>${money(d.deposit)}</b></div>
+            <em className={d.deposit > 0 ? "on" : "off"}>{d.deposit > 0 ? "Active" : "No deposit"}</em>
+            <div className="db-direct-actions">
+              <button onClick={() => copy(d.address, `d-${d.address}`)} aria-label="Copy address">{copied === `d-${d.address}` ? <Check size={13}/> : <Copy size={13}/>}</button>
+              <a href={EXPLORER + d.address} target="_blank" rel="noreferrer" aria-label="View on BscScan"><ExternalLink size={13}/></a>
+            </div>
+          </div>)}
+          {!shownDirects.length && <p className="db-fine">No members match this filter.</p>}
+        </div>}
+  </section>;
+
+  const LevelTeamCard = <section className="db-card db-team-levels">
+    <div className="db-card-head">
+      <div><span className="db-eyebrow">Team by level</span><h2>{team.data ? `${team.data.total}${team.data.truncated ? "+" : ""} member${team.data.total === 1 ? "" : "s"} in your team` : "Your team"}</h2></div>
+      <button className="db-link-btn" onClick={fetchTeam} disabled={team.status === "loading"}>{team.status === "loading" ? <><Loader2 size={14} className="db-spin"/> Loading</> : <><RefreshCw size={14}/> Refresh</>}</button>
+    </div>
+    {team.data && <div className="db-team-summary">
+      <div><span>Organization A</span><b>{sideCount(0)}</b></div>
+      <div><span>Organization B</span><b>{sideCount(1)}</b></div>
+      <div><span>Deepest level</span><b>{deepestLevel ? `L${deepestLevel}` : "–"}</b></div>
+      <div><span>Team deposits</span><b>${money(teamDeposits, 0)}</b></div>
+    </div>}
+    {team.status === "error" && <p className="db-inline-warn"><CircleAlert size={14}/> {team.error} <button onClick={fetchTeam}>Try again</button></p>}
+    <div className="db-level-table" role="table" aria-label="Members per level">
+      <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Your ROI-on-ROI</span></div>
+      {Array.from({ length: 15 }, (_, index) => {
+        const rows = teamLevels[index] || [];
+        const unlocked = index < data.level;
+        const isOpen = openLevel === index && rows.length > 0;
+        return <React.Fragment key={index}>
+          <button role="row" className={`db-level-row ${rows.length ? "has" : "empty"} ${isOpen ? "open" : ""}`} onClick={() => rows.length && setOpenLevel(isOpen ? null : index)} disabled={!rows.length} aria-expanded={isOpen}>
+            <span><ChevronRight size={14} className="db-level-chev"/>L{index + 1}</span>
+            <span><b>{teamLoading ? "…" : rows.length}</b></span>
+            <span>{rows.filter(m => m.side === 0).length}</span>
+            <span>{rows.filter(m => m.side === 1).length}</span>
+            <span>${money(rows.reduce((sum, m) => sum + m.deposit, 0), 0)}</span>
+            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} {levels[index]}%</span>
+          </button>
+          {isOpen && <div className="db-level-members">{rows.map(m => <div key={m.address} className="db-level-member">
+            <Avatar address={m.address} size={28}/>
+            <div><b title={m.address}>{short(m.address)}</b><small>Org {m.side === 0 ? "A" : "B"} · placed under {m.parent.toLowerCase() === account.toLowerCase() ? "you" : short(m.parent)}</small></div>
+            <span className={m.deposit > 0 ? "dep" : "nodep"}>{m.deposit > 0 ? `$${money(m.deposit)}` : "No deposit"}</span>
+            <button onClick={() => copy(m.address, m.address)} aria-label="Copy address">{copied === m.address ? <Check size={13}/> : <Copy size={13}/>}</button>
+          </div>)}</div>}
+        </React.Fragment>;
+      })}
+    </div>
+    {team.data?.truncated && <p className="db-fine">Showing the first {team.data.total.toLocaleString()} members. Larger teams are cut off here to keep the page fast.</p>}
+    <p className="db-fine">Deposits are each member's own package deposits. Levels follow placement: level 1 is your direct members, level 2 is their direct members, and so on. Lock icons show the ROI-on-ROI levels you haven't unlocked yet.</p>
+  </section>;
+
+  const teamView = <>
     <div className="db-grid even">{ReferralCard}{TeamVolumeCard}</div>
+    {registered && DirectTeamCard}
+    {registered && LevelTeamCard}
     <section className="db-card">
       <div className="db-card-head"><div><span className="db-eyebrow">ROI-on-ROI</span><h2>Level rewards</h2></div>
         <span className="db-chip green">{data.level} of 15 unlocked</span></div>
@@ -336,7 +450,7 @@ export default function Dashboard(props) {
     </div>
   </>;
 
-  const views = { overview, portfolio, team, rewards };
+  const views = { overview, portfolio, team: teamView, rewards };
 
   return <div className="db">
     <aside className="db-sidebar">

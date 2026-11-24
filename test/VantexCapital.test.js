@@ -277,4 +277,79 @@ describe("VantexCapital", function () {
     await expect(vantex.invest(usdt(100), 0)).to.be.revertedWithCustomError(vantex, "Paused");
     await expect(vantex.connect(owner).setPaused(false)).to.emit(vantex, "PauseSet").withArgs(false);
   });
+
+  it("credits the placement parent as sponsor for the original register functions", async function () {
+    const { owner, alice, bob, vantex } = await fixture();
+    await expect(vantex.connect(alice).registerWithMode(owner.address, 0, 0, 0))
+      .to.emit(vantex, "Sponsored").withArgs(alice.address, owner.address);
+    await vantex.connect(bob).register(owner.address, 1, 0);
+
+    expect(await vantex.sponsorOf(alice.address)).to.equal(owner.address);
+    expect(await vantex.directReferralCount(owner.address)).to.equal(2);
+    expect(await vantex.directReferralsOf(owner.address, 0, 10)).to.deep.equal([alice.address, bob.address]);
+  });
+
+  it("records the inviting sponsor separately from the spillover placement", async function () {
+    const { owner, alice, bob, carol, vantex } = await fixture();
+    // Owner's two direct spots fill up, so carol (invited by owner) spills over under alice.
+    await vantex.connect(alice).registerWithMode(owner.address, 0, 0, 0);
+    await vantex.connect(bob).registerWithMode(owner.address, 1, 0, 0);
+    await expect(vantex.connect(carol).registerWithSponsor(owner.address, alice.address, 0, 0, 1))
+      .to.emit(vantex, "Sponsored").withArgs(carol.address, owner.address);
+
+    expect((await vantex.members(carol.address)).referrer).to.equal(alice.address);
+    expect(await vantex.directLeg(alice.address, 0)).to.equal(carol.address);
+    expect(await vantex.sponsorOf(carol.address)).to.equal(owner.address);
+    expect(await vantex.rewardMode(carol.address)).to.equal(1);
+    expect(await vantex.directReferralCount(owner.address)).to.equal(3);
+    expect(await vantex.directReferralCount(alice.address)).to.equal(0);
+    expect(await vantex.directReferralsOf(owner.address, 2, 10)).to.deep.equal([carol.address]);
+    expect(await vantex.directReferralsOf(owner.address, 5, 10)).to.deep.equal([]);
+  });
+
+  it("defaults the sponsor to the placement parent and rejects sponsors outside the upline", async function () {
+    const { owner, alice, bob, carol, vantex } = await fixture();
+    const [, , , , dave] = await ethers.getSigners();
+    await vantex.connect(alice).registerWithMode(owner.address, 0, 0, 0);
+    await vantex.connect(bob).registerWithMode(owner.address, 1, 0, 0);
+
+    // bob is not above alice, so he cannot be credited for a member placed under alice.
+    await expect(vantex.connect(carol).registerWithSponsor(bob.address, alice.address, 0, 0, 0))
+      .to.be.revertedWithCustomError(vantex, "InvalidSponsor");
+    // An unregistered sponsor is rejected too.
+    await expect(vantex.connect(carol).registerWithSponsor(dave.address, alice.address, 0, 0, 0))
+      .to.be.revertedWithCustomError(vantex, "InvalidSponsor");
+    // address(0) credits the placement parent.
+    await vantex.connect(carol).registerWithSponsor(ethers.ZeroAddress, alice.address, 0, 0, 0);
+    expect(await vantex.sponsorOf(carol.address)).to.equal(alice.address);
+    expect(await vantex.directReferralsOf(alice.address, 0, 10)).to.deep.equal([carol.address]);
+  });
+
+  it("registers with a sponsor and invests with a permit in one transaction", async function () {
+    const { owner, alice, bob, token, vantex } = await fixture();
+    await vantex.connect(alice).registerWithMode(owner.address, 0, 0, 0);
+    const amount = usdt(1_200);
+    const deadline = (await time.latest()) + 3600;
+    const network = await ethers.provider.getNetwork();
+    const signature = await bob.signTypedData(
+      { name: "Mock USDT", version: "1", chainId: network.chainId, verifyingContract: await token.getAddress() },
+      { Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" }
+      ] },
+      { owner: bob.address, spender: await vantex.getAddress(), value: amount, nonce: await token.nonces(bob.address), deadline }
+    );
+    const { v, r, s } = ethers.Signature.from(signature);
+    await token.connect(bob).approve(await vantex.getAddress(), 0);
+
+    await expect(vantex.connect(bob).registerAndInvestWithSponsor(owner.address, alice.address, 0, 0, 0, amount, 3, { deadline, v, r, s }))
+      .to.emit(vantex, "Sponsored").withArgs(bob.address, owner.address)
+      .and.to.emit(vantex, "Invested");
+    expect(await vantex.sponsorOf(bob.address)).to.equal(owner.address);
+    expect((await vantex.members(bob.address)).referrer).to.equal(alice.address);
+    expect(await vantex.positionsOf(bob.address)).to.have.length(1);
+  });
 });

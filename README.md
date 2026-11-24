@@ -39,6 +39,8 @@ npm run build
 
 To deploy a new UUPS proxy on BSC Testnet, add a funded test-wallet `DEPLOYER_PRIVATE_KEY` to `.env` and run `npm run deploy:testnet`. Leave `PAYMENT_TOKEN` unset to deploy a new MockUSDT, or set it to an existing BSC Testnet token. Never commit `.env`.
 
+To upgrade the existing proxy (for example to add sponsor tracking for "people who joined with my link"), set `DEPLOYER_PRIVATE_KEY` to the **contract owner's** test-wallet key and `VANTEX_PROXY_ADDRESS` to the proxy, then run `npm run upgrade:testnet`. The OpenZeppelin plugin checks storage compatibility before deploying. Members who registered before the sponsor upgrade have no sponsor record; the dashboard treats their placement parent as their sponsor.
+
 To upgrade the implementation while preserving proxy state, set `VANTEX_PROXY_ADDRESS` to the proxy and run `npm run upgrade:testnet`. Only the contract owner can authorize a UUPS upgrade. Keep storage variables append-only across versions and commit the `.openzeppelin/bsc-testnet.json` deployment manifest.
 
 ## Important assumptions and risk notes
