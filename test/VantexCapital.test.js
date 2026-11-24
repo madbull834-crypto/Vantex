@@ -141,6 +141,8 @@ describe("VantexCapital", function () {
     const before = await token.balanceOf(owner.address);
     await expect(vantex.claimRoi()).to.emit(vantex, "RoiClaimed");
     expect(await token.balanceOf(owner.address)).to.be.closeTo(before + usdt(120), 1_000n);
+    await time.increase(DAY);
+    expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(12), 1_000n); // still based on $1,000
   });
 
   it("does not accrue ROI on Saturday or Sunday", async function () {
@@ -174,50 +176,65 @@ describe("VantexCapital", function () {
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(202));
   });
 
-  it("compounds claimable ROI into a new selected-plan position", async function () {
+  it("has no manual compound function", async function () {
+    const { vantex } = await fixture();
+    expect(vantex.compoundRoi).to.equal(undefined);
+  });
+
+  it("offers selectable Starter, Growth and Elite compound packages", async function () {
+    const { vantex } = await fixture();
+    const starter = await vantex.compoundTerms(usdt(100), 4);
+    const growth = await vantex.compoundTerms(usdt(100), 5);
+    const elite = await vantex.compoundTerms(usdt(100), 6);
+    expect(starter).to.deep.equal([60n, BigInt(90 * DAY)]);
+    expect(growth).to.deep.equal([65n, BigInt(150 * DAY)]);
+    expect(elite).to.deep.equal([70n, BigInt(200 * DAY)]);
+  });
+
+  it("accrues compound profit continuously while principal remains locked", async function () {
+    const { owner, token, vantex } = await fixture();
+    await vantex.setRewardMode(1);
+    await setNextBlockOnWeekday(1); // Monday 00:00 UTC
+    await vantex.invest(usdt(1000), 4); // Starter: $6 profit per earning day
+    await time.increase(1);
+    expect(await vantex.pendingRoi(owner.address)).to.be.greaterThan(0);
+    expect(await vantex.pendingRoi(owner.address)).to.be.lessThan(usdt(0.001));
+    const before = await token.balanceOf(owner.address);
+    await vantex.claimRoi(); // compound claims do not wait for the $5 ROI minimum
+    expect(await token.balanceOf(owner.address)).to.be.greaterThan(before);
+    expect((await vantex.positionsOf(owner.address))[0].principal).to.equal(usdt(1000));
+  });
+
+  it("does not accrue compound profit on Saturday or Sunday", async function () {
     const { owner, vantex } = await fixture();
+    await vantex.setRewardMode(1);
+    await setNextBlockOnWeekday(5); // Friday 00:00 UTC
+    await vantex.invest(usdt(1000), 4);
+    await time.increase(3 * DAY); // Monday: only Friday has closed on an earning day
+    expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(6), 10n);
+    await time.increase(DAY); // Tuesday: Monday closed too
+    expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(12), 10n);
+  });
+
+  it("allows compound profit below $5 to be withdrawn", async function () {
+    const { owner, alice, token, vantex } = await fixture();
+    await vantex.connect(alice).registerWithMode(owner.address, 0, 0, 1); // Auto Compound
     await setNextBlockOnWeekday(1);
-    await vantex.invest(usdt(1000), 2);
-    await time.increase(14 * DAY);
-    await expect(vantex.compoundRoi(1)).to.emit(vantex, "RoiCompounded");
-    const positions = await vantex.positionsOf(owner.address);
-    expect(positions).to.have.length(2);
-    expect(positions[1].principal).to.be.closeTo(usdt(120), 1_000n);
-    expect(positions[1].dailyRateBps).to.equal(110);
-    expect(await vantex.totalCompounded()).to.be.closeTo(usdt(120), 1_000n);
+    await vantex.connect(alice).invest(usdt(60), 4); // $0.36 per earning day
+    await time.increase(DAY);
+    const before = await token.balanceOf(alice.address);
+    await expect(vantex.connect(alice).claimRoi()).to.emit(vantex, "RoiClaimed");
+    expect(await token.balanceOf(alice.address)).to.be.closeTo(before + usdt(0.36), 100n);
   });
 
-  it("auto-compounds an opted-in member once on a Monday-Friday earning day", async function () {
-    const { owner, vantex } = await fixture();
-    await vantex.setRewardMode(1);
-    await setNextBlockOnWeekday(1); // Monday UTC
-    await vantex.invest(usdt(1000), 2);
-    await time.increase(14 * DAY);
-
-    await expect(vantex.processAutoCompound(owner.address)).to.emit(vantex, "RoiCompounded");
-    const positions = await vantex.positionsOf(owner.address);
-    expect(positions).to.have.length(2);
-    expect(positions[1].principal).to.be.closeTo(usdt(120), 1_000n);
-    await expect(vantex.processAutoCompound(owner.address)).to.be.revertedWithCustomError(vantex, "AlreadyProcessed");
-  });
-
-  it("rejects automatic compounding on weekends", async function () {
-    const { owner, vantex } = await fixture();
-    await vantex.setRewardMode(1);
-    await setNextBlockOnWeekday(5); // Friday UTC
-    await vantex.invest(usdt(1000), 2);
-    await time.increase(DAY); // Saturday UTC
-    await expect(vantex.processAutoCompound(owner.address)).to.be.revertedWithCustomError(vantex, "OutsideEarningDay");
-  });
-
-  it("normalizes 60/40 business and unlocks salary cycles", async function () {
+  it("uses 50/50 business to unlock salary cycles", async function () {
     const { owner, alice, bob, token, vantex } = await fixture();
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
-    await vantex.connect(alice).invest(usdt(600), 2);
-    await vantex.connect(bob).invest(usdt(400), 1);
+    await vantex.connect(alice).invest(usdt(500), 1);
+    await vantex.connect(bob).invest(usdt(500), 1);
     expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(1000));
-    expect(await vantex.qualifiedLevel(owner.address)).to.equal(11);
+    expect(await vantex.qualifiedLevel(owner.address)).to.equal(7);
     expect((await vantex.members(owner.address)).salaryRank).to.equal(1);
     await time.increase(15 * 24 * 60 * 60);
     const before = await token.balanceOf(owner.address);
@@ -227,6 +244,7 @@ describe("VantexCapital", function () {
 
   it("pays qualified ROI-on-ROI referral rewards", async function () {
     const { owner, alice, bob, token, vantex } = await fixture();
+    await vantex.invest(usdt(100), 0); // opens $300 of ROI-on-ROI earning capacity
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
     await setNextBlockOnWeekday(1);
@@ -240,6 +258,24 @@ describe("VantexCapital", function () {
     expect(await vantex.referralEarnings(owner.address)).to.be.closeTo(usdt(3.6), 100n);
   });
 
+  it("caps ROI-mode level income at 3x and adds capacity after a new investment", async function () {
+    const { owner, alice, bob, vantex } = await fixture();
+    await vantex.invest(usdt(1), 0); // $3 level-income capacity
+    await vantex.connect(alice).register(owner.address, 0, 0);
+    await vantex.connect(bob).register(owner.address, 1, 0);
+    await setNextBlockOnWeekday(1);
+    await vantex.connect(alice).invest(usdt(2500), 3);
+    await vantex.connect(bob).invest(usdt(50), 0); // $100 balanced business opens levels 1-3
+    await time.increase(2 * DAY);
+    await vantex.connect(alice).claimRoi();
+    expect(await vantex.referralEarnings(owner.address)).to.equal(usdt(3));
+
+    await vantex.invest(usdt(1), 0); // another $3 capacity
+    await time.increase(2 * DAY);
+    await vantex.connect(alice).claimRoi();
+    expect(await vantex.referralEarnings(owner.address)).to.equal(usdt(6));
+  });
+
   it("stores the exact 15 ROI-on-ROI percentages", async function () {
     const { vantex } = await fixture();
     const expected = [1000n, 500n, 400n, 300n, 300n, 300n, 200n, 200n, 100n, 100n, 200n, 200n, 300n, 400n, 500n];
@@ -248,25 +284,38 @@ describe("VantexCapital", function () {
     }
   });
 
-  it("unlocks levels 3, 7, 11, and 15 at the brochure business thresholds", async function () {
-    const { owner, alice, bob, vantex } = await fixture();
+  it("unlocks levels with equal leg volume even when the contributor counts differ", async function () {
+    const { owner, alice, bob, carol, vantex } = await fixture();
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
+    await vantex.connect(carol).register(bob.address, 0, 1);
 
-    await vantex.connect(alice).invest(usdt(60), 0);
-    await vantex.connect(bob).invest(usdt(40), 0);
+    // One person supplies A's $50; two people collectively supply B's $50.
+    await vantex.connect(alice).invest(usdt(50), 0);
+    await vantex.connect(bob).invest(usdt(25), 0);
+    await vantex.connect(carol).invest(usdt(25), 0);
+    expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(100));
     expect(await vantex.qualifiedLevel(owner.address)).to.equal(3);
 
-    await vantex.connect(alice).invest(usdt(120), 1);
-    await vantex.connect(bob).invest(usdt(80), 0);
+    // Levels 4-7 require another $300, making $400 cumulative ($200 per organization).
+    await vantex.connect(alice).invest(usdt(150), 1);
+    await vantex.connect(bob).invest(usdt(75), 0);
+    await vantex.connect(carol).invest(usdt(75), 0);
+    expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(400));
     expect(await vantex.qualifiedLevel(owner.address)).to.equal(7);
 
-    await vantex.connect(alice).invest(usdt(300), 1);
+    // Levels 8-11 require another $800, making $1,200 cumulative ($600 per organization).
+    await vantex.connect(alice).invest(usdt(400), 1);
     await vantex.connect(bob).invest(usdt(200), 1);
+    await vantex.connect(carol).invest(usdt(200), 1);
+    expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(1200));
     expect(await vantex.qualifiedLevel(owner.address)).to.equal(11);
 
-    await vantex.connect(alice).invest(usdt(420), 1);
-    await vantex.connect(bob).invest(usdt(280), 1);
+    // Levels 12-15 require another $1,500, making $2,700 cumulative ($1,350 per organization).
+    await vantex.connect(alice).invest(usdt(750), 2);
+    await vantex.connect(bob).invest(usdt(375), 1);
+    await vantex.connect(carol).invest(usdt(375), 1);
+    expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(2700));
     expect(await vantex.qualifiedLevel(owner.address)).to.equal(15);
   });
 
@@ -355,6 +404,7 @@ describe("VantexCapital", function () {
 
   it("records ROI-on-ROI history with level, time and per-level totals", async function () {
     const { owner, alice, bob, carol, vantex } = await fixture();
+    await vantex.invest(usdt(100), 0); // opens $300 of ROI-on-ROI earning capacity
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
     await vantex.connect(carol).register(alice.address, 0, 0);
@@ -386,5 +436,34 @@ describe("VantexCapital", function () {
     expect(levels[1].lastPaidAt).to.equal(paidAt);
     expect(levels[2].payments).to.equal(0);
     expect(levels[0].total + levels[1].total).to.equal(await vantex.referralEarnings(owner.address));
+  });
+
+  it("requires at least 5 USDT to claim ROI to the wallet", async function () {
+    const { owner, vantex } = await fixture();
+    expect(await vantex.MIN_CLAIM_USD()).to.equal(5);
+    await setNextBlockOnWeekday(1); // Monday UTC
+    await vantex.invest(usdt(100), 0); // package 1: $1.00 per earning day
+    await time.increase(4 * DAY); // four earning days = $4
+    await expect(vantex.claimRoi()).to.be.revertedWithCustomError(vantex, "BelowMinimumClaim").withArgs(usdt(5));
+    await time.increase(DAY); // Friday counts too: $5
+    await expect(vantex.claimRoi()).to.emit(vantex, "RoiClaimed");
+  });
+
+  it("returns compound principal only when the selected term ends", async function () {
+    const { owner, token, vantex } = await fixture();
+    await vantex.setRewardMode(1);
+    await setNextBlockOnWeekday(1);
+    await vantex.invest(usdt(1000), 4); // Starter: 0.60% for 90 earning days
+    await time.increase(14 * DAY); // ten earning days: $60 profit, no principal
+    expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(60), 100n);
+
+    const before = await token.balanceOf(owner.address);
+    await expect(vantex.claimRoi()).to.emit(vantex, "RoiClaimed");
+    expect(await token.balanceOf(owner.address)).to.be.closeTo(before + usdt(60), 1_000n);
+    expect(await vantex.pendingRoi(owner.address)).to.be.lessThan(usdt(0.01));
+
+    await time.increase(200 * DAY); // beyond 90 earning days
+    // Remaining $480 profit plus the locked $1,000 principal.
+    expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(1480), 1_000n);
   });
 });

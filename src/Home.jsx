@@ -18,13 +18,13 @@ const faqs = [
   ["What do I need to join?", "A free crypto wallet such as MetaMask or Trust Wallet, plus a little test BNB (tBNB) for network fees. If you don't have tBNB yet, the join window shows you where to get it free and continues automatically once it arrives."],
   ["Do I need an email or password?", "No. Your wallet is your account. You approve each action in your wallet, and nobody else can move your funds."],
   ["How do invitations work?", "When you open someone's referral link, you join their team automatically. If their two direct positions (Organization A and B) are full, you're placed in the next open position in their team."],
-  ["What is the difference between ROI and Auto Compound?", "ROI lets you claim your Monday–Friday rewards to your wallet. Auto Compound reinvests those rewards into new positions. You choose when you join."],
+  ["What is the difference between ROI and Compound?", "ROI packages pay up to 2×. Compound mode lets you choose Starter, Growth, or Elite: profit is withdrawable anytime, while principal stays locked until the selected earning term ends."],
   ["Are returns guaranteed?", "No. The figures on this page are calculations from the contract terms, not promises. Rewards depend on the contract holding enough funds, and smart contracts carry risk. Only use money you can afford to lose."],
   ["Is this live with real money?", "The app currently runs on BSC Testnet with test tokens, so you can try every feature without spending real funds."]
 ];
 
 export default function Home({
-  account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
+  account, connect, data, plans, compoundPlans = [], levels, selectedPlan, selectPlan, amount, changeAmount, projected,
   isConfigured, notice, linkReferrer, openRegistration, openDashboard, startInvesting, referralLink, onMintUsdt
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -225,6 +225,21 @@ export default function Home({
         </article>)}</div>
       </section>
 
+      <section id="compounding" className="hp-section hp-wrap">
+        <div className="hp-head"><div><span className="hp-eyebrow">Compound packages</span><h2>Choose your lock and return</h2></div><p>Profit accrues every Monday–Friday earning second and can be withdrawn anytime. Your original principal remains locked until the selected package term ends.</p></div>
+        <div className="hp-plans three">{compoundPlans.map(item => <article key={item.index} className={`hp-plan ${item.color}`} onClick={() => selectPlan(item.index)}>
+          <div className="hp-plan-top"><span>{item.name}</span>{item.index === 6 && <b>HIGHEST RATE</b>}</div>
+          <h3>{item.rate}<small>/ earning day</small></h3>
+          <p className="hp-plan-range">{item.earningDays} earning days</p>
+          <ul>
+            <li><CalendarDays size={14}/>{item.days}</li>
+            <li><Coins size={14}/>Profit withdrawable anytime</li>
+            <li><ShieldCheck size={14}/>Principal unlocked at maturity</li>
+          </ul>
+          <button className="hp-btn outline full" onClick={event => { event.stopPropagation(); selectPlan(item.index); primaryAction(); }}>Choose {item.name} <ArrowRight size={15}/></button>
+        </article>)}</div>
+      </section>
+
       <section id="network" className="hp-section hp-network">
         <div className="hp-wrap hp-network-grid">
           <div>
@@ -232,11 +247,11 @@ export default function Home({
             <h2>Two organizations.<br/>Fifteen levels.</h2>
             <p>Your team grows in two organizations, A and B. Team volume from their package deposits unlocks two kinds of income: <b>ROI-on-ROI</b>, a share of the ROI your team claims across up to 15 levels, and <b>salary</b> at each balanced-volume milestone.</p>
             <div className="hp-split">
-              <div className="a"><span>Organization A</span><b>60%</b></div>
-              <i>or</i>
-              <div className="b"><span>Organization B</span><b>60%</b></div>
+              <div className="a"><span>Organization A</span><b>50%</b></div>
+              <i>+</i>
+              <div className="b"><span>Organization B</span><b>50%</b></div>
             </div>
-            <small className="hp-muted">You choose your split when you join, and the other organization carries 40%. The split applies only to ROI-on-ROI and salary income. It never changes package returns.</small>
+            <small className="hp-muted">Qualification uses equal business volume from both organizations. The number of contributors can differ: one person can provide one side's volume while several people collectively provide the other side.</small>
           </div>
           <div className="hp-levels" aria-label="Level reward percentages">
             {levels.map((rate, index) => <div key={index}><span>L{index + 1}</span><i><em style={{ width: `${rate * 10}%` }}/></i><b>{rate}%</b></div>)}

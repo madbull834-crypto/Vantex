@@ -20,7 +20,7 @@ subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD).setAction(async ({ solcVersion }, 
 module.exports = {
   solidity: {
     version: "0.8.24",
-    settings: { optimizer: { enabled: true, runs: 500 } }
+    settings: { optimizer: { enabled: true, runs: 200 } }
   },
   networks: {
     bscTestnet: {

@@ -444,3 +444,22 @@
   .db-pay-row a{display:none}
   .db-tabbar button{font-size:10px}
 }
+
+.db-claim-min{flex-basis:100%;font-size:12px;color:#a9b6c3}
+
+/* Compounding plans */
+.db-cplan-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 10px}
+.db-cplan{--c:var(--blue);display:grid;gap:12px;padding:16px;border-radius:16px;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 14%,transparent),#ffffff04);border:1px solid color-mix(in srgb,var(--c) 30%,transparent)}
+.db-cplan.green{--c:var(--green)}.db-cplan.purple{--c:var(--violet)}
+.db-cplan.current{box-shadow:0 0 0 2px var(--c),0 14px 30px #0006}
+.db-cplan-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.db-cplan-top b{font:800 18px "Manrope";letter-spacing:-.02em}
+.db-cplan-top span{font-size:12px;color:var(--muted)}
+.db-cplan-figs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.db-cplan-figs div{display:grid;gap:2px;padding:10px 12px;border-radius:12px;background:#0005}
+.db-cplan-figs span{font-size:11px;color:var(--muted)}
+.db-cplan-figs b{font:800 19px "Manrope";color:var(--c)}
+.db-cplan ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:13px;color:#b8c3cf}
+.db-cplan ul b{color:var(--text)}
+.db-cplan small{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c)}
+@media(max-width:860px){.db-cplan-grid{grid-template-columns:1fr}}

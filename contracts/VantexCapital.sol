@@ -12,10 +12,10 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 /**
  * @title VantexCapital
  * @notice Stablecoin investment and referral accounting based on the supplied Vantex plan.
- * @dev Rates use basis points (100 = 1%). Each package releases equal daily profit and capital,
- *      producing the brochure totals of 1.00%–1.30% per earning day. ROI accrues Monday through
- *      Friday in UTC, and every position stops at a 2x payout. Higher-rate packages therefore
- *      finish in fewer earning days. This is a pooled-reward contract:
+ * @dev Rates use basis points (100 = 1%). ROI packages release equal daily profit and capital and
+ *      stop at 2x. Compound packages pay continuously accrued profit at 0.60%/0.65%/0.70% for
+ *      90/150/200 earning days; profit is claimable anytime and principal unlocks at maturity.
+ *      Earnings accrue Monday through Friday in UTC. This is a pooled-reward contract:
  *      the owner must keep it solvent and no return is guaranteed by the code.
  */
 contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
@@ -23,13 +23,19 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     uint16 private constant BPS = 10_000;
     uint16 private constant MAX_PAYOUT_BPS = 20_000;
-    uint16 private constant MAX_POSITIONS = 50;
+    uint16 private constant MAX_POSITIONS = 300;
     uint32 private constant DAY = 1 days;
     uint32 private constant SALARY_CYCLE = 15 days;
     uint8 private constant MAX_REFERRAL_LEVEL = 15;
+    /// @notice Smallest ROI claim to the wallet, in whole USDT. Compounding is not affected.
+    uint256 public constant MIN_CLAIM_USD = 5;
 
-    enum Plan { Package1, Package2, Package3, Package4 }
+    /// @dev Package1-4 are live deposit packages. The final three values are retained only so an
+    ///      upgrade can still decode positions created by the previous compounding implementation.
+    enum Plan { Package1, Package2, Package3, Package4, Starter, Growth, Elite }
     enum Leg { A, B }
+    /// @dev Retained in the ABI and member storage for upgrade compatibility. Qualification now
+    ///      always requires equal business in Organizations A and B, regardless of this value.
     enum Split { A60B40, A40B60 }
     enum RewardMode { ROI, AutoCompound }
 
@@ -87,6 +93,8 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     mapping(address => uint256) public referralEarnings;
 
     uint16[15] public referralRateBps;
+    /// @notice Additional balanced-business block for each level group: 1-3, 4-7, 8-11, 12-15.
+    ///         Cumulative unlock totals are therefore $100, $400, $1,200 and $2,700.
     uint16[4] public levelBusinessUsd;
     uint32[5] public salaryBusinessUsd;
     uint16[5] public salaryAmountUsd;
@@ -107,6 +115,18 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     mapping(address => ReferralPayment[]) private _referralPayments;
     mapping(address => LevelEarnings[15]) private _levelEarnings;
 
+    /// @dev Growth moved out of a virtual balance during a claim or mode change. It remains here
+    ///      until the wallet transfer succeeds, so reverting a below-minimum claim loses nothing.
+    mapping(address => uint256) private _autoCarry;
+
+    /// @dev Retained for storage compatibility with the previous separate-position compound model.
+    mapping(address => mapping(uint256 => uint256)) public lotOffset;
+
+    /// @notice Original deposited principal for each position. Auto Compound grows the position's
+    ///         displayed principal above this baseline and resets to this value after a claim.
+    /// @dev Appended after the legacy auto-compound fields to preserve upgradeable storage layout.
+    mapping(address => mapping(uint256 => uint256)) public originalPrincipal;
+
     error Paused();
     error InvalidAmount();
     error InvalidReferrer();
@@ -114,6 +134,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     error LegOccupied();
     error TooManyPositions();
     error NothingToClaim();
+    error BelowMinimumClaim(uint256 minimum);
     error Insolvent();
     error TransferRestricted();
     error AutoCompoundDisabled();
@@ -275,87 +296,69 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         for (uint256 i = offset; i < end; ++i) page[i - offset] = list[i];
     }
 
-    function setRewardMode(RewardMode mode) external {
+    function setRewardMode(RewardMode mode) external nonReentrant whenNotPaused {
         if (!members[msg.sender].registered) revert InvalidReferrer();
         rewardMode[msg.sender] = mode;
         emit RewardModeSet(msg.sender, mode);
     }
 
     function claimRoi() external nonReentrant whenNotPaused returns (uint256 amount) {
+        uint256 profit;
+        bool compoundClaim;
         Position[] storage positions = _positions[msg.sender];
-        uint256 length = positions.length;
-        for (uint256 i; i < length; ++i) {
-            uint256 earned = _earned(positions[i]);
-            uint256 already = positions[i].claimed;
-            if (earned > already) {
-                uint256 claimable = earned - already;
-                positions[i].claimed = uint128(earned);
-                amount += claimable;
+        for (uint256 i; i < positions.length; ++i) {
+            Position storage position = positions[i];
+            uint256 earned = _earned(position, block.timestamp);
+            if (earned > position.claimed) {
+                amount += earned - position.claimed;
+                profit += _profitBetween(position, position.claimed, earned);
+                if (position.plan >= Plan.Starter) compoundClaim = true;
+                position.claimed = uint128(earned);
             }
         }
         if (amount == 0) revert NothingToClaim();
+        // Compound profit is explicitly withdrawable continuously; ROI wallet claims retain $5 minimum.
+        if (!compoundClaim && amount < MIN_CLAIM_USD * unit) revert BelowMinimumClaim(MIN_CLAIM_USD * unit);
         _requireBalance(amount);
         paymentToken.safeTransfer(msg.sender, amount);
         totalRewardsPaid += amount;
         emit RoiClaimed(msg.sender, amount);
-        // Half of the package payout is profit and half is released capital. ROI-on-ROI
-        // commission applies only to the profit component.
-        _payReferralRoi(msg.sender, amount / 2);
+        _payReferralRoi(msg.sender, profit);
     }
 
-    function compoundRoi(Plan plan) external nonReentrant whenNotPaused returns (uint256 amount) {
-        amount = _collectPending(msg.sender);
-        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
-        _createCompoundedPosition(msg.sender, amount, plan, rate, earningDuration);
-    }
-
-    /**
-     * @notice Compounds an opted-in member's accrued ROI once per Monday-Friday UTC day.
-     * @dev Permissionless so an automation keeper can submit the transaction for the member.
-     *      The keeper should call near the end of each UTC earning day.
-     */
-    function processAutoCompound(address account) external nonReentrant whenNotPaused returns (uint256 amount) {
+    /// @dev Retained for ABI compatibility. Selected compound positions accrue without a keeper.
+    function processAutoCompound(address account) external nonReentrant whenNotPaused returns (uint256 created) {
         if (!members[account].registered || rewardMode[account] != RewardMode.AutoCompound) {
             revert AutoCompoundDisabled();
         }
-        uint256 dayNumber = block.timestamp / DAY;
-        uint256 weekday = (dayNumber + 4) % 7; // Sunday=0, Monday=1, ..., Saturday=6.
-        if (weekday == 0 || weekday == 6) revert OutsideEarningDay();
-        if (lastAutoCompoundDay[account] >= dayNumber) revert AlreadyProcessed();
-
-        amount = _collectPending(account);
-        Plan plan = _planForAmount(amount);
-        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
-        lastAutoCompoundDay[account] = dayNumber;
-        _createCompoundedPosition(account, amount, plan, rate, earningDuration);
+        return 0;
     }
 
-    function _collectPending(address account) private returns (uint256 amount) {
-        Position[] storage positions = _positions[account];
-        if (positions.length >= MAX_POSITIONS) revert TooManyPositions();
-        for (uint256 i; i < positions.length; ++i) {
-            uint256 earned = _earned(positions[i]);
-            if (earned > positions[i].claimed) {
-                amount += earned - positions[i].claimed;
-                positions[i].claimed = uint128(earned);
-            }
+    function autoCompoundCarry(address account) external view returns (uint256) {
+        return rewardMode[account] == RewardMode.AutoCompound ? pendingRoi(account) : 0;
+    }
+
+    function unrecordedAutoCompoundDays(address) external pure returns (uint256) { return 0; }
+
+    function _earned(Position storage position, uint256 at) private view returns (uint256) {
+        if (at <= position.startedAt) return 0;
+        uint256 until = at < position.endsAt ? at : position.endsAt;
+        uint256 secondsEarned = _businessSecondsUntil(until) - _businessSecondsUntil(position.startedAt);
+        uint256 accrued = uint256(position.principal) * position.dailyRateBps * secondsEarned / DAY / BPS;
+        if (position.plan < Plan.Starter) {
+            uint256 maximum = uint256(position.principal) * 2;
+            return accrued < maximum ? accrued : maximum;
         }
-        if (amount < unit || amount > 2_500 * unit) revert InvalidAmount();
+        return at < position.endsAt ? accrued : accrued + position.principal;
     }
 
-    function _createCompoundedPosition(
-        address account,
-        uint256 amount,
-        Plan plan,
-        uint16 rate,
-        uint32 earningDuration
-    ) private {
-        uint40 started = uint40(block.timestamp);
-        uint40 ends = uint40(_addBusinessSeconds(started, earningDuration));
-        _positions[account].push(Position(uint128(amount), 0, started, ends, rate, plan));
-        totalCompounded += amount;
-        emit RoiCompounded(account, _positions[account].length - 1, amount, plan);
-        _payReferralRoi(account, amount / 2);
+    function _profitBetween(Position storage position, uint256 from, uint256 to) private view returns (uint256) {
+        if (position.plan < Plan.Starter) return to / 2 - from / 2;
+        uint256 termProfit = uint256(position.principal) * position.dailyRateBps
+            * (_businessSecondsUntil(position.endsAt) - _businessSecondsUntil(position.startedAt)) / DAY / BPS;
+        uint256 a = from < termProfit ? from : termProfit;
+        uint256 b = to < termProfit ? to : termProfit;
+        return b - a;
     }
 
     function claimSalary() external nonReentrant whenNotPaused returns (uint256 amount) {
@@ -396,13 +399,31 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         else if (plan == Plan.Package3 && amount >= 501 * unit && amount <= 1_000 * unit) rate = 120;
         else if (plan == Plan.Package4 && amount >= 1_001 * unit && amount <= 2_500 * unit) rate = 130;
         else revert InvalidAmount();
-        earningDuration = uint32((uint256(MAX_PAYOUT_BPS) * DAY + rate - 1) / rate);
+        earningDuration = _packageDuration(rate);
     }
 
+    /// @notice Selectable compound terms. Any package accepts $1-$2,500; the longer lock earns
+    ///         the higher rate. Profit accrues continuously on earning days and principal unlocks
+    ///         only when the term completes.
+    function compoundTerms(uint256 amount, Plan plan) public view returns (uint16 rate, uint32 earningDuration) {
+        if (amount < unit || amount > 2_500 * unit) revert InvalidAmount();
+        uint256 earningDays;
+        if (plan == Plan.Starter) { rate = 60; earningDays = 90; }
+        else if (plan == Plan.Growth) { rate = 65; earningDays = 150; }
+        else if (plan == Plan.Elite) { rate = 70; earningDays = 200; }
+        else revert InvalidAmount();
+        earningDuration = uint32(earningDays * DAY);
+    }
+
+    function _packageDuration(uint16 rate) private pure returns (uint32) {
+        return uint32((uint256(MAX_PAYOUT_BPS) * DAY + rate - 1) / rate);
+    }
+
+    /// @notice Claimable ROI/compound profit now, including unlocked compound principal at maturity.
     function pendingRoi(address account) public view returns (uint256 amount) {
         Position[] storage positions = _positions[account];
         for (uint256 i; i < positions.length; ++i) {
-            uint256 earned = _earned(positions[i]);
+            uint256 earned = _earned(positions[i], block.timestamp);
             if (earned > positions[i].claimed) amount += earned - positions[i].claimed;
         }
     }
@@ -414,11 +435,14 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     function qualifiedLevel(address account) public view returns (uint8) {
         Member storage m = members[account];
         uint256 balanced = _balancedBusiness(m);
-        if (balanced >= uint256(levelBusinessUsd[3]) * unit) return 15;
-        if (balanced >= uint256(levelBusinessUsd[2]) * unit) return 11;
-        if (balanced >= uint256(levelBusinessUsd[1]) * unit) return 7;
-        if (balanced >= uint256(levelBusinessUsd[0]) * unit) return 3;
-        return 0;
+        uint256 required = uint256(levelBusinessUsd[0]) * unit;
+        if (balanced < required) return 0;
+        required += uint256(levelBusinessUsd[1]) * unit;
+        if (balanced < required) return 3;
+        required += uint256(levelBusinessUsd[2]) * unit;
+        if (balanced < required) return 7;
+        required += uint256(levelBusinessUsd[3]) * unit;
+        return balanced < required ? 11 : 15;
     }
 
     function balancedBusiness(address account) external view returns (uint256) {
@@ -430,7 +454,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         for (uint8 i; i < 5; ++i) if (business >= uint256(salaryBusinessUsd[i]) * unit) rank = i + 1;
     }
 
-    function _register(address account, address sponsor, address referrer, Leg leg, Split split, RewardMode mode) private {
+    function _register(address account, address sponsor, address referrer, Leg leg, Split, RewardMode mode) private {
         if (members[account].registered) revert AlreadyRegistered();
         if (referrer == address(0) || referrer == account || !members[referrer].registered) revert InvalidReferrer();
         if (directLeg[referrer][leg] != address(0)) revert LegOccupied();
@@ -440,12 +464,14 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         }
         members[account].registered = true;
         members[account].referrer = referrer;
-        members[account].split = split;
+        // Kept at its legacy zero value solely to preserve the deployed Member storage layout.
+        // Level and salary qualification always use 50:50 business and never read this field.
+        members[account].split = Split.A60B40;
         rewardMode[account] = mode;
         directLeg[referrer][leg] = account;
         sponsorOf[account] = sponsor;
         _directReferrals[sponsor].push(account);
-        emit Registered(account, referrer, leg, split);
+        emit Registered(account, referrer, leg, Split.A60B40);
         emit Sponsored(account, sponsor);
         emit RewardModeSet(account, mode);
     }
@@ -455,24 +481,20 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         if (amount < unit || amount > 2_500 * unit) revert InvalidAmount();
         if (_positions[account].length >= MAX_POSITIONS) revert TooManyPositions();
 
-        (uint16 rate, uint32 earningDuration) = planTerms(amount, plan);
+        bool compound = plan >= Plan.Starter;
+        if ((rewardMode[account] == RewardMode.AutoCompound) != compound) revert InvalidAmount();
+        (uint16 rate, uint32 earningDuration) = compound
+            ? compoundTerms(amount, plan)
+            : planTerms(amount, plan);
         paymentToken.safeTransferFrom(account, address(this), amount);
         uint40 started = uint40(block.timestamp);
         uint40 ends = uint40(_addBusinessSeconds(started, earningDuration));
         _positions[account].push(Position(uint128(amount), 0, started, ends, rate, plan));
+        originalPrincipal[account][_positions[account].length - 1] = amount;
         members[account].personalBusiness += uint128(amount);
         totalDeposited += amount;
         _propagateBusiness(account, amount);
         emit Invested(account, _positions[account].length - 1, amount, plan, rate, ends);
-    }
-
-    function _earned(Position storage position) private view returns (uint256) {
-        uint256 until = block.timestamp < position.endsAt ? block.timestamp : position.endsAt;
-        if (until <= position.startedAt) return 0;
-        uint256 earningSeconds = _businessSecondsUntil(until) - _businessSecondsUntil(position.startedAt);
-        uint256 amount = uint256(position.principal) * position.dailyRateBps * earningSeconds / DAY / BPS;
-        uint256 maximum = uint256(position.principal) * 2;
-        return amount < maximum ? amount : maximum;
     }
 
     /**
@@ -494,13 +516,6 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         return earningSeconds;
     }
 
-    function _planForAmount(uint256 amount) private view returns (Plan) {
-        if (amount >= unit && amount <= 100 * unit) return Plan.Package1;
-        if (amount >= 101 * unit && amount <= 500 * unit) return Plan.Package2;
-        if (amount >= 501 * unit && amount <= 1_000 * unit) return Plan.Package3;
-        if (amount >= 1_001 * unit && amount <= 2_500 * unit) return Plan.Package4;
-        revert InvalidAmount();
-    }
 
     function _addBusinessSeconds(uint256 timestamp, uint256 earningSeconds) private pure returns (uint256 cursor) {
         cursor = timestamp;
@@ -545,6 +560,14 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         for (uint8 level = 1; level <= MAX_REFERRAL_LEVEL && upline != address(0); ++level) {
             if (qualifiedLevel(upline) >= level) {
                 uint256 reward = roi * referralRateBps[level - 1] / BPS;
+                // ROI-mode level income is limited to 3x the earner's fresh wallet deposits.
+                // Every later deposit adds another 3x capacity; prior payments never reset.
+                if (rewardMode[upline] == RewardMode.ROI) {
+                    uint256 cap = uint256(members[upline].personalBusiness) * 3;
+                    uint256 paid = referralEarnings[upline];
+                    if (paid >= cap) reward = 0;
+                    else if (reward > cap - paid) reward = cap - paid;
+                }
                 if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
                     paymentToken.safeTransfer(upline, reward);
                     referralEarnings[upline] += reward;
@@ -564,13 +587,10 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     function _balancedBusiness(Member storage member) private view returns (uint256) {
         uint256 a = member.legABusiness;
         uint256 b = member.legBBusiness;
-        // Normalize both legs against the selected 60/40 split. The lower normalized leg is
-        // the qualified balanced volume; excess on one side cannot unlock ranks by itself.
-        uint256 aWeight = member.split == Split.A60B40 ? 60 : 40;
-        uint256 bWeight = 100 - aWeight;
-        uint256 normalizedA = a * 100 / aWeight;
-        uint256 normalizedB = b * 100 / bWeight;
-        return normalizedA < normalizedB ? normalizedA : normalizedB;
+        // Qualification is 50:50 by volume. Each matched dollar represents one dollar from both
+        // organizations, so $50 + $50 produces $100 of balanced business. The people contributing
+        // on either side may differ; only each organization's total deposit volume matters.
+        return (a < b ? a : b) * 2;
     }
 
     function _refreshSalary(address account) private {
@@ -598,5 +618,5 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[39] private __gap;
+    uint256[36] private __gap;
 }

@@ -40,6 +40,8 @@ const VANTEX_ABI = [
   "error InvalidAmount()",
   "error InvalidReferrer()",
   "error InvalidSponsor()",
+  "error BelowMinimumClaim(uint256 minimum)",
+  "function MIN_CLAIM_USD() view returns (uint256)",
   "function sponsorOf(address) view returns (address)",
   "function directReferralCount(address) view returns (uint256)",
   "function directReferralsOf(address account,uint256 offset,uint256 limit) view returns (address[])",
@@ -57,6 +59,7 @@ const VANTEX_ABI = [
   "function referralPaymentsOf(address account,uint256 offset,uint256 limit) view returns ((uint128 amount,uint40 paidAt,uint8 level,address source)[])",
   "function rewardMode(address) view returns (uint8)",
   "function pendingRoi(address) view returns (uint256)",
+  "function compoundTerms(uint256 amount,uint8 plan) view returns (uint16 rate,uint32 earningDuration)",
   "function balancedBusiness(address) view returns (uint256)",
   "function qualifiedLevel(address) view returns (uint8)",
   "function positionsOf(address) view returns (tuple(uint128 principal,uint128 claimed,uint40 startedAt,uint40 endsAt,uint16 dailyRateBps,uint8 plan)[])",
@@ -66,7 +69,6 @@ const VANTEX_ABI = [
   "function investWithPermit(uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
   "function registerAndInvestWithPermit(address referrer,uint8 leg,uint8 split,uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
   "function registerAndInvestWithPermitAndMode(address referrer,uint8 leg,uint8 split,uint8 mode,uint256 amount,uint8 plan,uint256 deadline,uint8 v,bytes32 r,bytes32 s)",
-  "function compoundRoi(uint8 plan)",
   "function claimRoi()",
   "function claimSalary()",
   "function setRewardMode(uint8 mode)"
@@ -87,6 +89,13 @@ const plans = [
   { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, earningDays: 154, days: "≈154 earning days · Mon–Fri", color: "green", index: 3, copy: "1.30% total per earning day until the position reaches its 2× payout cap." }
 ];
 
+const compoundPlans = [
+  { name: "Starter", label: "$1 — $2,500", rate: "0.60%", rateValue: 0.60, min: 1, max: 2500, earningDays: 90, days: "90 earning days · Mon–Fri", color: "blue", index: 4 },
+  { name: "Growth", label: "$1 — $2,500", rate: "0.65%", rateValue: 0.65, min: 1, max: 2500, earningDays: 150, days: "150 earning days · Mon–Fri", color: "green", index: 5 },
+  { name: "Elite", label: "$1 — $2,500", rate: "0.70%", rateValue: 0.70, min: 1, max: 2500, earningDays: 200, days: "200 earning days · Mon–Fri", color: "purple", index: 6 }
+];
+const allPlans = [...plans, ...compoundPlans];
+
 const levels = [10, 5, 4, 3, 3, 3, 2, 2, 1, 1, 2, 2, 3, 4, 5];
 
 const walletErrorCodeIsNetwork = (error) => error?.code === "WRONG_NETWORK";
@@ -94,6 +103,7 @@ const walletErrorCodeIsNetwork = (error) => error?.code === "WRONG_NETWORK";
 const friendlyError = (error) => {
   if (error?.code === "ACTION_REJECTED") return "Transaction cancelled in your wallet.";
   const revertName = error?.revert?.name;
+  if (revertName === "BelowMinimumClaim") return "The minimum claim is $5. Wait until your rewards reach $5, or compound them instead.";
   if (revertName === "InvalidSponsor") return "Your referrer couldn't be credited for this spot. Refresh and try again.";
   if (revertName === "InvalidReferrer") return "No valid sponsor placement was found. Refresh and try registration again.";
   if (revertName === "LegOccupied") return "That sponsor placement was just taken. Click register again to select another open placement.";
@@ -116,7 +126,6 @@ function App() {
   const [selectedPlan, setSelectedPlan] = useState(0);
   const [referrer, setReferrer] = useState(LINK_REFERRER);
   const [leg, setLeg] = useState(LINK_LEG);
-  const [split, setSplit] = useState(0);
   const [registrationMode, setRegistrationMode] = useState(0);
   const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, level: 0, member: null, positions: [], directA: ZERO, directB: ZERO });
   const [registrationOpen, setRegistrationOpen] = useState(false);
@@ -305,9 +314,11 @@ function App() {
   const registerCall = async (contract, placement, mode, estimateOnly = false) => {
     const withSponsor = await supportsSponsor(contract);
     const fn = withSponsor ? contract.registerWithSponsor : contract.registerWithMode;
+    // The deployed ABI retains this legacy argument for proxy compatibility; qualification is
+    // always 50:50 and the value has no effect.
     const args = withSponsor
-      ? [inviterRef.current.ref || ZERO, placement.referrer, placement.leg, split, mode]
-      : [placement.referrer, placement.leg, split, mode];
+      ? [inviterRef.current.ref || ZERO, placement.referrer, placement.leg, 0, mode]
+      : [placement.referrer, placement.leg, 0, mode];
     return estimateOnly ? fn.estimateGas(...args) : fn(...args);
   };
 
@@ -319,6 +330,45 @@ function App() {
     const out = [];
     for (let i = 0; i < items.length; i += size) out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
     return out;
+  };
+
+  // Payments made before the contract stored ROI-on-ROI history only exist as ReferralPaid events.
+  // Most public BSC Testnet nodes refuse log queries, so a node that serves them is used for this one range.
+  const LOG_RPC = import.meta.env.VITE_LOG_RPC || "https://bsc-prebsc-dataseed.bnbchain.org";
+  const LEGACY_FROM = Number(import.meta.env.VITE_LEGACY_FROM_BLOCK || 143762151);
+  const LEGACY_TO = Number(import.meta.env.VITE_LEGACY_TO_BLOCK || 144549833);
+  const LOG_SPAN = 5000;
+  const loadLegacyRoiPayments = async (account) => {
+    const cacheKey = `vantex-legacy-roi:${CONTRACT_ADDRESS}:${account}`.toLowerCase();
+    try { const cached = JSON.parse(localStorage.getItem(cacheKey) || "null"); if (Array.isArray(cached)) return cached; } catch {}
+    const logProvider = new ethers.JsonRpcProvider(LOG_RPC, 97, { staticNetwork: true });
+    const iface = new ethers.Interface(["event ReferralPaid(address indexed earner, address indexed source, uint8 level, uint256 amount)"]);
+    const topics = [iface.getEvent("ReferralPaid").topicHash, ethers.zeroPadValue(account, 32)];
+    const ranges = [];
+    for (let block = LEGACY_FROM; block <= LEGACY_TO; block += LOG_SPAN) ranges.push([block, Math.min(LEGACY_TO, block + LOG_SPAN - 1)]);
+    const fetchRange = async ([fromBlock, toBlock]) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { return await logProvider.getLogs({ address: CONTRACT_ADDRESS, topics, fromBlock, toBlock }); }
+        catch { await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
+      }
+      throw new Error("log range failed");
+    };
+    const logs = (await mapInChunks(ranges, 10, fetchRange)).flat();
+    const blocks = [...new Set(logs.map(log => log.blockNumber))];
+    const stamps = new Map(await mapInChunks(blocks, 10, async number => [number, (await logProvider.getBlock(number)).timestamp]));
+    const payments = logs.map(log => {
+      const event = iface.parseLog(log);
+      return {
+        id: `legacy-${log.transactionHash}-${log.index}`,
+        amount: Number(ethers.formatUnits(event.args.amount, TOKEN_DECIMALS)),
+        paidAt: Number(stamps.get(log.blockNumber)),
+        level: Number(event.args.level),
+        source: event.args.source,
+        legacy: true
+      };
+    });
+    try { localStorage.setItem(cacheKey, JSON.stringify(payments)); } catch {}
+    return payments;
   };
 
   // ROI-on-ROI income: totals per level and the most recent payments (newest first).
@@ -350,7 +400,24 @@ function App() {
       lastPaidAt: Number(entry.lastPaidAt),
       payments: Number(entry.payments)
     }));
-    return { supported: true, total, levels, payments, count, truncated: count > ROI_HISTORY_LIMIT, loadedAt: Date.now() };
+    // Earnings the contract has no stored record for were paid before history tracking: recover them from events.
+    const tracked = levels.reduce((sum, level) => sum + level.total, 0);
+    let legacyError = false;
+    if (total - tracked > 1e-6) {
+      try {
+        const legacy = await loadLegacyRoiPayments(account);
+        for (const payment of legacy) {
+          const level = levels[payment.level - 1];
+          if (!level) continue;
+          level.total += payment.amount;
+          level.payments += 1;
+          level.lastPaidAt = Math.max(level.lastPaidAt, payment.paidAt);
+        }
+        payments.push(...legacy.sort((a, b) => b.paidAt - a.paidAt));
+        count += legacy.length;
+      } catch { legacyError = true; }
+    }
+    return { supported: true, total, levels, payments, count, truncated: count > ROI_HISTORY_LIMIT, legacyError, loadedAt: Date.now() };
   };
 
   // Walks the member's placement tree level by level (up to 15 levels, the ROI-on-ROI depth).
@@ -477,7 +544,7 @@ function App() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [registrationOpen, provider, account, placementReady, placementError, referrer, leg, split, registrationMode, data.member]);
+  }, [registrationOpen, provider, account, placementReady, placementError, referrer, leg, registrationMode, data.member]);
 
   const connect = async (chosen) => {
     const list = walletsRef.current;
@@ -599,7 +666,7 @@ function App() {
         const value = ethers.parseUnits(amount || "0", TOKEN_DECIMALS);
         const signer = await provider.getSigner();
         const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer);
-        const plan = plans[selectedPlan];
+        const plan = allPlans.find(item => item.index === selectedPlan);
         const numericAmount = Number(amount);
         if (!Number.isFinite(numericAmount) || numericAmount < plan.min || numericAmount > plan.max) throw new Error(`Enter an amount from $${plan.min.toLocaleString()} to $${plan.max.toLocaleString()} for ${plan.name}.`);
         const balance = await token.balanceOf(account);
@@ -652,18 +719,9 @@ function App() {
           setReferrer(placement.referrer);
           setLeg(placement.leg);
           tx = await supportsSponsor(contract)
-            ? await contract.registerAndInvestWithSponsor(inviterRef.current.ref || ZERO, placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, { deadline, v, r, s })
-            : await contract.registerAndInvestWithPermitAndMode(placement.referrer, placement.leg, split, registrationMode, value, selectedPlan, deadline, v, r, s);
+            ? await contract.registerAndInvestWithSponsor(inviterRef.current.ref || ZERO, placement.referrer, placement.leg, 0, registrationMode, value, selectedPlan, { deadline, v, r, s })
+            : await contract.registerAndInvestWithPermitAndMode(placement.referrer, placement.leg, 0, registrationMode, value, selectedPlan, deadline, v, r, s);
         }
-      } else if (kind === "compoundRoi") {
-        const pendingAmount = Number(data.pending);
-        const compoundPlan = plans.find(plan => pendingAmount >= plan.min && pendingAmount <= plan.max);
-        if (!compoundPlan) {
-          throw new Error(pendingAmount < 1
-            ? "At least $1 of claimable ROI is required to compound."
-            : "Claimable ROI above $2,500 cannot be compounded into a single position. Claim it to your wallet instead.");
-        }
-        tx = await contract.compoundRoi(compoundPlan.index);
       } else if (kind === "setRewardMode") {
         tx = await contract.setRewardMode(arg);
       }
@@ -673,7 +731,6 @@ function App() {
       setNotice({
         mint: "10,000 test mUSDT added to your wallet.",
         claimRoi: "Rewards claimed to your wallet.",
-        compoundRoi: "Rewards compounded into a new position.",
         claimSalary: "Salary claimed to your wallet.",
         setRewardMode: arg === 1 ? "Auto Compound is on. Rewards will be reinvested." : "Rewards will now be paid to your wallet."
       }[kind] || "Transaction confirmed.");
@@ -683,7 +740,7 @@ function App() {
   };
 
   const selectPlan = (index) => {
-    const plan = plans[index];
+    const plan = allPlans.find(item => item.index === index);
     setSelectedPlan(index);
     const numericAmount = Number(amount || 0);
     if (numericAmount < plan.min || numericAmount > plan.max) setAmount(String(plan.min));
@@ -691,16 +748,18 @@ function App() {
 
   const changeAmount = (value) => {
     setAmount(value);
+    if (selectedPlan >= 4) return; // every compound package accepts the full $1-$2,500 range
     const numericAmount = Number(value);
     const matchingPlan = plans.find(plan => numericAmount >= plan.min && numericAmount <= plan.max);
     if (matchingPlan) setSelectedPlan(matchingPlan.index);
   };
 
   const projected = useMemo(() => {
-    return Number(amount || 0) * 2;
-  }, [amount]);
-
-  const compoundPlan = plans.find(plan => Number(data.pending) >= plan.min && Number(data.pending) <= plan.max) || null;
+    const plan = allPlans.find(item => item.index === selectedPlan);
+    if (!plan) return 0;
+    const principal = Number(amount || 0);
+    return selectedPlan >= 4 ? principal * (1 + plan.rateValue * plan.earningDays / 100) : principal * 2;
+  }, [amount, selectedPlan]);
 
   const openDashboard = () => { window.location.hash = "/dashboard"; setRoute("dashboard"); window.scrollTo(0, 0); };
   const openHome = () => { window.location.hash = ""; setRoute("home"); window.scrollTo(0, 0); };
@@ -743,9 +802,9 @@ function App() {
   if (route === "dashboard") return <><Dashboard {...{
     account, connect, data, notice, busy, isConfigured, plans, selectedPlan,
     setSelectedPlan: selectPlan, amount, setAmount: changeAmount, projected, transact, referrer,
-    setReferrer, leg, setLeg, split, setSplit, registrationMode, setRegistrationMode,
+    setReferrer, leg, setLeg, registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer: inviter.ref,
-    compoundPlan, openRegistration, levels,
+    compoundPlans, openRegistration, levels,
     refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount, loadTeam, loadRoiIncome
   }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>{wizard}</>;
 
@@ -755,7 +814,7 @@ function App() {
   };
 
   return <><Home {...{
-    account, connect, data, plans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
+    account, connect, data, plans, compoundPlans, levels, selectedPlan, selectPlan, amount, changeAmount, projected,
     isConfigured, notice, linkReferrer: inviter.ref, openRegistration, openDashboard, startInvesting, referralLink,
     onMintUsdt: mintFromHome
   }}/>{wizard}</>;

@@ -246,3 +246,8 @@
 @keyframes hp-spin{to{transform:rotate(360deg)}}
 @media(max-width:900px){.hp-faucet{grid-template-columns:auto 1fr}.hp-faucet-side{grid-column:1/-1;justify-items:stretch}.hp-faucet-balances,.hp-faucet-actions{justify-content:flex-start}.hp-faucet-error{text-align:left}}
 @media(max-width:560px){.hp-faucet{padding:18px;grid-template-columns:1fr}.hp-faucet-icon{display:none}.hp-faucet-actions .hp-btn{flex:1 1 100%}}
+
+.hp-plans.three{grid-template-columns:repeat(3,1fr)}
+.hp-plans.three .hp-plan{cursor:default}
+.hp-plan-tag{margin:auto 0 0;padding-top:14px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+@media(max-width:900px){.hp-plans.three{grid-template-columns:1fr}}
