@@ -145,6 +145,27 @@ describe("VantexCapital", function () {
     expect(await vantex.pendingRoi(owner.address)).to.be.closeTo(usdt(12), 1_000n); // still based on $1,000
   });
 
+  it("returns complete live ROI details for each position", async function () {
+    const { owner, vantex } = await fixture();
+    await setNextBlockOnWeekday(1); // Monday UTC
+    await vantex.invest(usdt(1000), 2);
+    await time.increase(14 * DAY); // Ten earning days
+
+    let [details] = await vantex.roiDetailsOf(owner.address);
+    expect(details.accruedPayout).to.equal(usdt(120));
+    expect(details.claimedPayout).to.equal(0);
+    expect(details.claimablePayout).to.equal(usdt(120));
+    expect(details.profitAccrued).to.equal(usdt(60));
+    expect(details.capitalReturned).to.equal(usdt(60));
+    expect(details.maximumPayout).to.equal(usdt(2000));
+    expect(details.active).to.equal(true);
+
+    await vantex.claimRoi();
+    [details] = await vantex.roiDetailsOf(owner.address);
+    expect(details.claimedPayout).to.be.closeTo(usdt(120), 1_000n);
+    expect(details.claimablePayout).to.be.closeTo(0, 1_000n);
+  });
+
   it("does not accrue ROI on Saturday or Sunday", async function () {
     const { owner, vantex } = await fixture();
     await setNextBlockOnWeekday(5); // Friday UTC

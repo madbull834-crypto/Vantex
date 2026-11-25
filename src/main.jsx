@@ -59,6 +59,7 @@ const VANTEX_ABI = [
   "function referralPaymentsOf(address account,uint256 offset,uint256 limit) view returns ((uint128 amount,uint40 paidAt,uint8 level,address source)[])",
   "function rewardMode(address) view returns (uint8)",
   "function pendingRoi(address) view returns (uint256)",
+  "function roiDetailsOf(address) view returns ((uint256 accruedPayout,uint256 claimedPayout,uint256 claimablePayout,uint256 profitAccrued,uint256 capitalReturned,uint256 maximumPayout,bool active)[])",
   "function compoundTerms(uint256 amount,uint8 plan) view returns (uint16 rate,uint32 earningDuration)",
   "function balancedBusiness(address) view returns (uint256)",
   "function qualifiedLevel(address) view returns (uint8)",
@@ -127,7 +128,7 @@ function App() {
   const [referrer, setReferrer] = useState(LINK_REFERRER);
   const [leg, setLeg] = useState(LINK_LEG);
   const [registrationMode, setRegistrationMode] = useState(0);
-  const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, level: 0, member: null, positions: [], directA: ZERO, directB: ZERO });
+  const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, level: 0, member: null, positions: [], roiDetails: [], directA: ZERO, directB: ZERO });
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationStage, setRegistrationStage] = useState("idle");
   const [registrationError, setRegistrationError] = useState("");
@@ -179,10 +180,10 @@ function App() {
       ]);
       if (!sponsor.registered) throw new Error("This invite link doesn't belong to an active member. Ask your sponsor to check their link.");
       const preferredOccupant = inviteLeg === 0 ? legA : legB;
-      const alternateOccupant = inviteLeg === 0 ? legB : legA;
       if (preferredOccupant === ZERO) return { referrer: inviteRef, leg: inviteLeg };
-      if (alternateOccupant === ZERO) return { referrer: inviteRef, leg: inviteLeg === 0 ? 1 : 0 };
-      return findOpenPlacement(reader, inviteRef);
+      // Keep spillover inside the organization selected during registration. Once the sponsor's
+      // direct A/B spot is filled, search below that branch instead of crossing to the other side.
+      return findOpenPlacement(reader, preferredOccupant);
     }
     if (ethers.isAddress(referrer) && referrer !== ZERO) {
       const [sponsor, occupant] = await Promise.all([reader.members(referrer), reader.directLeg(referrer, leg)]);
@@ -198,14 +199,16 @@ function App() {
       const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, activeProvider);
       const referralTotalPromise = reader.referralEarnings(activeAccount).catch(() => 0n);
       const rewardModePromise = reader.rewardMode(activeAccount).catch(() => 0n);
-      const [member, pending, business, referralTotal, memberRewardMode, level, positions, balance, directA, directB, gas] = await Promise.all([
+      // Older proxy deployments do not have roiDetailsOf yet, so keep positionsOf as a safe fallback.
+      const roiDetailsPromise = reader.roiDetailsOf(activeAccount).catch(() => []);
+      const [member, pending, business, referralTotal, memberRewardMode, level, positions, roiDetails, balance, directA, directB, gas] = await Promise.all([
         reader.members(activeAccount), reader.pendingRoi(activeAccount), reader.balancedBusiness(activeAccount),
-        referralTotalPromise, rewardModePromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount),
+        referralTotalPromise, rewardModePromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount), roiDetailsPromise,
         token.balanceOf(activeAccount), reader.directLeg(activeAccount, 0), reader.directLeg(activeAccount, 1),
         activeProvider.getBalance(activeAccount).catch(() => null)
       ]);
       if (member.registered) storage.clear();
-      setData({ member, gas, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), rewardMode: Number(memberRewardMode), level: Number(level), positions, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
+      setData({ member, gas, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), rewardMode: Number(memberRewardMode), level: Number(level), positions, roiDetails, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
       if (!member.registered) {
         setPlacementReady(false);
         try {
@@ -789,7 +792,7 @@ function App() {
     stage={registrationStage} error={registrationError} txHash={registrationTx}
     onRegister={(mode) => registerMember(undefined, mode)} onContinue={connectAndRegister}
     registrationMode={registrationMode} setRegistrationMode={setRegistrationMode}
-    sponsor={referrer} leg={leg} linkReferrer={inviter.ref} onApplyInvite={applyInvite}
+    sponsor={referrer} leg={leg} linkReferrer={inviter.ref} preferredLeg={inviter.leg} onApplyInvite={applyInvite}
     onCheckReferrer={checkReferrer}
     joinFee={joinFee} onSwitchAccount={switchAccount}
     placementReady={placementReady} placementError={placementError} gasBalance={data.gas}

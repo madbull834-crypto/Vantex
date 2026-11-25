@@ -122,6 +122,7 @@ export default function Dashboard(props) {
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [section]);
 
   const positions = useMemo(() => data.positions.map((position, index) => {
+    const contractDetails = data.roiDetails?.[index];
     const principal = Number(ethers.formatUnits(position.principal, tokenDecimals));
     const claimed = Number(ethers.formatUnits(position.claimed, tokenDecimals));
     const startedAt = Number(position.startedAt);
@@ -135,8 +136,16 @@ export default function Dashboard(props) {
     const targetDays = compound ? Math.round((businessSecondsUntil(endsAt) - businessSecondsUntil(startedAt)) / DAY) : 200 / rate;
     const totalProfit = compound ? principal * rate / 100 * targetDays : principal;
     const totalPayout = principal + totalProfit;
-    return { index, principal, claimed, startedAt, endsAt, rate, profitRate, profitPerDay, totalPayout, totalProfit, targetDays, plan, compound, name: planNames[plan] || "Package" };
-  }), [data.positions, tokenDecimals]);
+    const onchain = contractDetails ? {
+      accruedPayout: Number(ethers.formatUnits(contractDetails.accruedPayout, tokenDecimals)),
+      claimablePayout: Number(ethers.formatUnits(contractDetails.claimablePayout, tokenDecimals)),
+      profitAccrued: Number(ethers.formatUnits(contractDetails.profitAccrued, tokenDecimals)),
+      capitalReturned: Number(ethers.formatUnits(contractDetails.capitalReturned, tokenDecimals)),
+      maximumPayout: Number(ethers.formatUnits(contractDetails.maximumPayout, tokenDecimals)),
+      active: contractDetails.active
+    } : null;
+    return { index, principal, claimed, startedAt, endsAt, rate, profitRate, profitPerDay, totalPayout, totalProfit, targetDays, plan, compound, onchain, name: planNames[plan] || "Package" };
+  }), [data.positions, data.roiDetails, tokenDecimals]);
 
   // Live figures between refreshes: rewards accrue per second on Monday–Friday.
   const live = useMemo(() => {
@@ -151,7 +160,8 @@ export default function Dashboard(props) {
       const daysDone = Math.min(position.targetDays, earningSeconds / DAY);
       if (active) { activeCapital += position.principal; perDay += position.principal * position.rate / 100; profitPerDay += position.profitPerDay; perSecond += position.principal * position.rate / 100 / DAY; }
       earnedTotal += earned;
-      return { ...position, earned, profitEarned, active, daysDone, daysLeft: Math.max(0, Math.ceil(position.targetDays - daysDone)), progress: daysDone / position.targetDays * 100 };
+      const claimable = Math.max(0, earned - position.claimed);
+      return { ...position, earned, profitEarned, active, claimable, daysDone, daysLeft: Math.max(0, Math.ceil(position.targetDays - daysDone)), progress: daysDone / position.targetDays * 100 };
     });
     const ticking = isEarningDay(now) && perSecond > 0;
     const pendingLive = Number(data.pending) + (ticking ? perSecond * Math.max(0, now - loadedAt.current) : 0);
@@ -161,9 +171,13 @@ export default function Dashboard(props) {
   const totalClaimed = positions.reduce((sum, position) => sum + position.claimed, 0);
   const roiRows = live.rows.filter(row => !row.compound);
   const compoundRows = live.rows.filter(row => row.compound);
-  const rowClaimable = (row) => Math.max(0, row.earned - row.claimed);
+  const rowClaimable = (row) => row.claimable;
   const roiPending = roiRows.reduce((sum, row) => sum + rowClaimable(row), 0);
   const compoundPending = compoundRows.reduce((sum, row) => sum + rowClaimable(row), 0);
+  // claimRoi settles every personal position in one transaction. The $5 minimum applies only
+  // when the transaction contains no compound-position payout.
+  const claimMinimumApplies = compoundPending <= 0;
+  const canClaimPersonal = live.pendingLive > 0 && (!claimMinimumApplies || live.pendingLive >= MIN_CLAIM);
   const roiPrincipal = roiRows.reduce((sum, row) => sum + row.principal, 0);
   const compoundPrincipal = compoundRows.reduce((sum, row) => sum + row.principal, 0);
   const roiClaimed = roiRows.reduce((sum, row) => sum + row.claimed, 0);
@@ -240,8 +254,8 @@ export default function Dashboard(props) {
         : registered ? "Create a position to start earning Monday–Friday rewards." : "Join and create a position to start earning."}</p>
     </div>
     <div className="db-hero-actions">
-      <button className="db-btn gold" disabled={busy || !account || live.pendingLive <= 0 || (!compoundMode && live.pendingLive < MIN_CLAIM)} onClick={() => transact("claimRoi")} title={!compoundMode && live.pendingLive < MIN_CLAIM ? `Minimum claim is $${MIN_CLAIM}` : ""}><ArrowDownToLine size={17}/> Claim to wallet</button>
-      {account && registered && !compoundMode && live.pendingLive < MIN_CLAIM && <span className="db-claim-min">Minimum claim is ${MIN_CLAIM} · ${money(Math.max(0, MIN_CLAIM - live.pendingLive))} to go.</span>}
+      <button className="db-btn gold" disabled={busy || !account || !canClaimPersonal} onClick={() => transact("claimRoi")} title={claimMinimumApplies && live.pendingLive < MIN_CLAIM ? `Minimum claim is $${MIN_CLAIM}` : ""}><ArrowDownToLine size={17}/> Claim to wallet</button>
+      {account && registered && claimMinimumApplies && live.pendingLive > 0 && live.pendingLive < MIN_CLAIM && <span className="db-claim-min">Minimum claim is ${MIN_CLAIM} · ${money(Math.max(0, MIN_CLAIM - live.pendingLive))} to go.</span>}
     </div>
     <div className="db-hero-glow"/>
   </section>;
@@ -287,14 +301,18 @@ export default function Dashboard(props) {
       </div>
       <div className="db-position-stats">
         <div><span>Capital</span><b>${money(row.principal)}</b></div>
-        <div><span>Profit / day</span><b className="up">${money(row.profitPerDay)}</b><small>{row.profitRate.toFixed(2)}% of capital</small></div>
-        <div><span>Profit earned</span><b className="up">${money(row.profitEarned)}</b><small>{row.compound ? (row.active ? `capital $${money(row.principal)} back on ${dateLabel(row.endsAt)}` : `+ $${money(row.principal)} capital returned`) : `+ $${money(row.earned / 2)} capital back`}</small></div>
+        <div><span>Total / day</span><b className="up">${money(row.principal * row.rate / 100)}</b><small>{row.rate.toFixed(2)}% · Mon–Fri</small></div>
+        <div><span>Claimable now</span><b className="up">${money(row.claimable, row.claimable < 0.01 ? 4 : 2)}</b><small>Live contract payout</small></div>
+        <div><span>Already claimed</span><b>${money(row.claimed)}</b></div>
+        <div><span>Profit accrued</span><b className="up">${money(row.onchain?.profitAccrued ?? row.profitEarned)}</b></div>
+        <div><span>Capital returned</span><b>${money(row.onchain?.capitalReturned ?? (row.compound ? Math.max(0, row.earned - row.profitEarned) : row.earned / 2))}</b></div>
+        <div><span>Payout cap</span><b>${money(row.onchain?.maximumPayout ?? row.totalPayout)}</b></div>
         <div><span>{row.active ? "Days left" : "Ended"}</span><b>{row.active ? row.daysLeft : dateLabel(row.endsAt)}</b></div>
       </div>
       <Progress value={row.progress} tone={planColors[row.plan]}/>
       <small className="db-position-foot">{row.compound
         ? <>Compounding plan · {Math.floor(row.daysDone)} of {row.targetDays} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)} (${money(row.totalProfit)} profit + ${money(row.principal)} capital at the end)</>
-        : <>{Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)} (2× cap: ${money(row.principal)} profit + ${money(row.principal)} capital)</>}</small>
+        : <>Started {dateLabel(row.startedAt)} · projected completion {dateLabel(row.endsAt)} · {Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · 2× cap includes ${money(row.principal)} profit + ${money(row.principal)} returned capital</>}</small>
     </article>)}</div>;
   };
 
@@ -400,7 +418,10 @@ export default function Dashboard(props) {
         <div><span>Already claimed</span><b>${money(roiClaimed)}</b></div>
         <div><span>Maximum payout</span><b>${money(roiCapacity)}</b></div>
       </div>
-      <div className="db-hero-actions db-income-action"><button className="db-btn gold" disabled={busy || roiPending < MIN_CLAIM} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Claim ROI</button></div>
+      <div className="db-hero-actions db-income-action">
+        <button className="db-btn gold" disabled={busy || !canClaimPersonal} onClick={() => transact("claimRoi")}><ArrowDownToLine size={17}/> Claim ${money(live.pendingLive)} total</button>
+        {compoundPending > 0 && <span className="db-claim-min">The contract settles all positions together: ${money(roiPending)} ROI + ${money(compoundPending)} compound.</span>}
+      </div>
       <div className="db-hero-glow"/>
     </section>
 

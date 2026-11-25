@@ -210,12 +210,16 @@
 .reg-sides button{display:grid;gap:2px;padding:10px 12px;border-radius:11px;border:1.5px solid #ecdcb3;background:#fffdf7;text-align:left;cursor:pointer;color:#3d2f0c}
 .reg-sides button b{font-size:13px}
 .reg-sides button span{font-size:11px;color:#3aa26a;font-weight:700}
+.reg-sides button span{display:flex;align-items:center;gap:4px}
 .reg-sides button.active{border-color:#c99a3c;background:#fff4d9;box-shadow:inset 0 0 0 1px #c99a3c}
 .reg-sides button.taken span{color:#a3998a}
 .reg-sides button:disabled{cursor:default}
 .reg-sides button.taken{opacity:.6}
 .reg-spill{font-size:12px;color:#7a6326}
 .reg-sponsor-card .reg-text-btn{justify-self:start;padding:0}
+.reg-org-choice{display:grid!important;gap:7px!important;padding-top:10px;border-top:1px solid #ead9ae}
+.reg-org-choice .reg-section-label{margin:0}
+.reg-org-choice>small{font-size:11px;line-height:1.4;color:#7a6326}
 @media(max-width:560px){.reg-segment button{font-size:12px!important}.reg-ref-actions{flex-direction:column;gap:4px}}
 .reg-sponsor-card>.reg-sponsor-row{display:flex;flex:none;align-items:center;gap:12px}
 .reg-sponsor-row .reg-badge{align-self:center}

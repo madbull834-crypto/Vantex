@@ -149,7 +149,7 @@
 .db-position-top em.off{background:#ffffff0d;color:var(--muted)}
 .db-dot{width:10px;height:10px;border-radius:50%;background:var(--gold)}
 .db-dot.blue{background:var(--blue)}.db-dot.purple{background:var(--violet)}.db-dot.green{background:var(--green)}
-.db-position-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.db-position-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px 8px}
 .db-position-stats div{display:grid;gap:3px}
 .db-position-stats span{font-size:12px;color:var(--faint)}
 .db-position-stats b{font-size:14px;font-variant-numeric:tabular-nums}

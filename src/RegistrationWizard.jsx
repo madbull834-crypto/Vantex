@@ -31,7 +31,7 @@ export default function RegistrationWizard({
   open, onClose, account, connect, isConfigured, registered,
   stage, error, txHash, onRegister, onContinue,
   registrationMode, setRegistrationMode,
-  sponsor, leg, linkReferrer, placementReady, placementError, onApplyInvite, joinFee, gasBalance, onSwitchAccount,
+  sponsor, leg, linkReferrer, preferredLeg, placementReady, placementError, onApplyInvite, joinFee, gasBalance, onSwitchAccount,
   onCheckReferrer, usdtBalance, onMintUsdt,
   referralLink, copyReferralLink, onInvest,
   wallets, connectStage, connectError, wrongNetwork, onSwitchNetwork
@@ -47,6 +47,7 @@ export default function RegistrationWizard({
   const [showQr, setShowQr] = useState(false);
   const [walletId, setWalletId] = useState("");
   const [mint, setMint] = useState({ status: "idle", error: "" });
+  const [choosingLeg, setChoosingLeg] = useState(false);
   const checkSeq = useRef(0);
 
   const linkChecked = useRef("");
@@ -116,6 +117,13 @@ export default function RegistrationWizard({
   const skipReferrer = async () => {
     setRefText(""); setRefCheck({ status: "idle" }); setEditingRef(false); setLinkBroken(false);
     if (linkReferrer) await onApplyInvite("");
+  };
+  const chooseOrganization = async (nextLeg) => {
+    if (!linkReferrer || nextLeg === preferredLeg || choosingLeg) return;
+    setChoosingLeg(true);
+    const problem = await onApplyInvite(linkReferrer, nextLeg);
+    if (problem) setRefCheck({ status: "invalid", error: problem });
+    setChoosingLeg(false);
   };
   // Don't let someone join by accident while a referrer they typed is still being checked or is invalid.
   const refPending = editingRef && refText.trim() !== "" && refCheck.status !== "idle";
@@ -244,6 +252,17 @@ export default function RegistrationWizard({
                   <span>You'll join their team automatically.</span>
                 </div>
                 <span className="reg-badge"><CircleCheck size={12}/> Verified</span>
+              </div>
+              <div className="reg-org-choice">
+                <span className="reg-section-label">Choose your organization</span>
+                <div className="reg-sides" role="radiogroup" aria-label="Organization">
+                  {[0, 1].map(side => <button key={side} type="button" role="radio" aria-checked={preferredLeg === side}
+                    className={preferredLeg === side ? "active" : ""} disabled={choosingLeg} onClick={() => chooseOrganization(side)}>
+                    <b>Organization {side === 0 ? "A" : "B"}</b>
+                    <span>{preferredLeg === side ? <><Check size={12}/> Selected</> : "Choose this side"}</span>
+                  </button>)}
+                </div>
+                <small>Your position stays in this side of your referrer's team, including spillover.</small>
               </div>
               <button className="reg-text-btn" onClick={() => { setEditingRef(true); setRefText(""); setRefCheck({ status: "idle" }); }}><RefreshCw size={12}/> Change referrer</button>
             </div>

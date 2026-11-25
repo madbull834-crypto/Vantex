@@ -70,6 +70,17 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         uint32 payments;
     }
 
+    /// @notice Live payout details for one position, calculated with the same rules used by claimRoi.
+    struct PositionRoiDetails {
+        uint256 accruedPayout;
+        uint256 claimedPayout;
+        uint256 claimablePayout;
+        uint256 profitAccrued;
+        uint256 capitalReturned;
+        uint256 maximumPayout;
+        bool active;
+    }
+
     struct Member {
         address referrer;
         uint128 personalBusiness;
@@ -430,6 +441,34 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
 
     function positionsOf(address account) external view returns (Position[] memory) {
         return _positions[account];
+    }
+
+    /// @notice Complete live ROI details for every position. The array indexes match positionsOf.
+    /// @dev This is a read-only helper and adds no proxy storage.
+    function roiDetailsOf(address account) external view returns (PositionRoiDetails[] memory details) {
+        Position[] storage positions = _positions[account];
+        details = new PositionRoiDetails[](positions.length);
+        for (uint256 i; i < positions.length; ++i) {
+            Position storage position = positions[i];
+            uint256 accrued = _earned(position, block.timestamp);
+            uint256 claimed = position.claimed;
+            uint256 profit = _profitBetween(position, 0, accrued);
+            uint256 maximum;
+            if (position.plan < Plan.Starter) maximum = uint256(position.principal) * 2;
+            else {
+                maximum = uint256(position.principal) + uint256(position.principal) * position.dailyRateBps
+                    * (_businessSecondsUntil(position.endsAt) - _businessSecondsUntil(position.startedAt)) / DAY / BPS;
+            }
+            details[i] = PositionRoiDetails({
+                accruedPayout: accrued,
+                claimedPayout: claimed,
+                claimablePayout: accrued > claimed ? accrued - claimed : 0,
+                profitAccrued: profit,
+                capitalReturned: accrued - profit,
+                maximumPayout: maximum,
+                active: block.timestamp < position.endsAt
+            });
+        }
     }
 
     function qualifiedLevel(address account) public view returns (uint8) {
