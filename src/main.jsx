@@ -792,7 +792,7 @@ function App() {
     stage={registrationStage} error={registrationError} txHash={registrationTx}
     onRegister={(mode) => registerMember(undefined, mode)} onContinue={connectAndRegister}
     registrationMode={registrationMode} setRegistrationMode={setRegistrationMode}
-    sponsor={referrer} leg={leg} linkReferrer={inviter.ref} preferredLeg={inviter.leg} onApplyInvite={applyInvite}
+    linkReferrer={inviter.ref} preferredLeg={inviter.leg} onApplyInvite={applyInvite}
     onCheckReferrer={checkReferrer}
     joinFee={joinFee} onSwitchAccount={switchAccount}
     placementReady={placementReady} placementError={placementError} gasBalance={data.gas}

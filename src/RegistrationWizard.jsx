@@ -31,7 +31,7 @@ export default function RegistrationWizard({
   open, onClose, account, connect, isConfigured, registered,
   stage, error, txHash, onRegister, onContinue,
   registrationMode, setRegistrationMode,
-  sponsor, leg, linkReferrer, preferredLeg, placementReady, placementError, onApplyInvite, joinFee, gasBalance, onSwitchAccount,
+  linkReferrer, preferredLeg, placementReady, placementError, onApplyInvite, joinFee, gasBalance, onSwitchAccount,
   onCheckReferrer, usdtBalance, onMintUsdt,
   referralLink, copyReferralLink, onInvest,
   wallets, connectStage, connectError, wrongNetwork, onSwitchNetwork
@@ -103,7 +103,6 @@ export default function RegistrationWizard({
   const copy = async (text, label) => {
     try { await navigator.clipboard.writeText(text); setCopied(label); setTimeout(() => setCopied(""), 2000); } catch {}
   };
-  const spillover = linkReferrer && sponsor && sponsor.toLowerCase() !== linkReferrer.toLowerCase();
   const flowKey = working ? stage : loadingAccount ? "placing" : connectStage;
   const activeIndex = Math.max(0, journey.findIndex(step => step.key === flowKey));
   const pasteFromClipboard = async () => {
@@ -156,7 +155,7 @@ export default function RegistrationWizard({
         <div className="reg-success-icon"><Check size={28}/></div>
         <span className="reg-kicker">WELCOME TO VANTEX</span>
         <h2 id="reg-title">You're in!</h2>
-        <p>Your account is active{sponsor ? <> in <b>{short(sponsor)}</b>'s team</> : null}. A few quick things to do next:</p>
+        <p>Your account is active{linkReferrer ? <> with referrer <b>{short(linkReferrer)}</b></> : null}. A few quick things to do next:</p>
         <div className="reg-next">
           {hasUsdt
             ? <div className="reg-next-item done"><span><Check size={14}/></span><div><b>Test USDT ready</b><small>You have ${Number(usdtBalance).toLocaleString("en-US", { maximumFractionDigits: 2 })} test mUSDT to invest</small></div></div>
