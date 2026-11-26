@@ -244,8 +244,8 @@ export default function Home({
         <div className="hp-wrap hp-network-grid">
           <div>
             <span className="hp-eyebrow">Network rewards</span>
-            <h2>Two organizations.<br/>Fifteen levels.</h2>
-            <p>Your team grows in two organizations, A and B. Team volume from their package deposits unlocks two kinds of income: <b>ROI-on-ROI</b>, a share of the ROI your team claims across up to 15 levels, and <b>salary</b> at each balanced-volume milestone.</p>
+            <h2>Direct rewards.<br/>Full-team salary.</h2>
+            <p><b>ROI-on-ROI</b> pays 10% of the profit claimed or compounded by your direct referrals only. Deposits from your full A/B organization count as team business toward <b>salary</b> milestones.</p>
             <div className="hp-split">
               <div className="a"><span>Organization A</span><b>50%</b></div>
               <i>+</i>
@@ -253,8 +253,8 @@ export default function Home({
             </div>
             <small className="hp-muted">Qualification uses equal business volume from both organizations. The number of contributors can differ: one person can provide one side's volume while several people collectively provide the other side.</small>
           </div>
-          <div className="hp-levels" aria-label="Level reward percentages">
-            {levels.map((rate, index) => <div key={index}><span>L{index + 1}</span><i><em style={{ width: `${rate * 10}%` }}/></i><b>{rate}%</b></div>)}
+          <div className="hp-levels" aria-label="Direct referral reward percentage">
+            <div><span>Direct referral</span><i><em style={{ width: "100%" }}/></i><b>10%</b></div>
           </div>
         </div>
       </section>

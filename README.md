@@ -5,18 +5,17 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 ## Included rules
 
 - Four amount-bound packages: $1–$100 at 0.50%, $101–$500 at 0.55%, $501–$1,000 at 0.60%, and $1,001–$2,500 at 0.65% profit per earning day. ROI accrues Monday–Friday in UTC, with matching capital release for combined daily rates of 1.00%–1.30%. Every position stops at exactly 2× principal, so the packages finish in approximately 200, 182, 167, and 154 earning days respectively.
-- ROI-on-ROI commissions apply to the profit component of a member's claim, not to released capital.
+- ROI-on-ROI commissions pay 10% of the profit component claimed by a member's direct referral only. Placement spillover still credits the inviting sponsor; indirect team members do not generate ROI-on-ROI.
 - Registration supports `ROI` mode for claimable rewards or `Auto Compound` mode. The permissionless automation entry point processes an opted-in member at most once per Monday–Friday UTC day; an external keeper must submit that daily transaction.
-- Fifteen-level ROI referral percentages: `10, 5, 4, 3, 3, 3, 2, 2, 1, 1, 2, 2, 3, 4, 5`.
+- Team deposits continue to propagate through the binary A/B organization for salary qualification.
 - Binary A/B registration with selectable 60/40 or 40/60 volume normalization.
-- Qualified depth at $100, $300, $800, and $1,500 of balanced business.
 - Salary ranks at $1k/$2k/$5k/$10k/$20k business, paid $25/$50/$125/$250/$500 every 15 days for six cycles.
 
 ## BSC Testnet contracts
 
-- Vantex UUPS proxy: `0x085E76feB9643253250EcC9b9A71d00035C4aF3f`
-- Current implementation: `0x8dB60087A8E3DAE519B9b105f9D8d058EDc8c474`
-- Mock USDT: `0xAEf967A8C08AFd2F45D40a66E75612EC1C31BAC4`
+- Vantex UUPS proxy: `0x57faC61E0c6281C8a3fF6Ca47162739c29161078`
+- Current implementation: `0xe27c6d62a78F08101fC9F8877d2731F676e7D068`
+- Mock USDT: `0x02E9442E94306f59D2408A8414eFdEbB0d29C4C3`
 - Network: BSC Testnet (`97`)
 
 The frontend requests BSC Testnet when a wallet connects. No local blockchain deployment is required.

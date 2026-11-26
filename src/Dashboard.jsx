@@ -17,8 +17,6 @@ const EXPLORER = "https://testnet.bscscan.com/address/";
 const planNames = ["Package 1", "Package 2", "Package 3", "Package 4", "Starter", "Growth", "Elite"];
 const planColors = ["gold", "blue", "purple", "green", "blue", "green", "purple"];
 const isCompoundPlan = (plan) => plan >= 4;
-// Balanced team volume needed to unlock ROI-on-ROI levels (mirrors qualifiedLevel in the contract).
-const levelTiers = [{ upTo: 3, need: 100 }, { upTo: 7, need: 400 }, { upTo: 11, need: 1200 }, { upTo: 15, need: 2700 }];
 const salaryTiers = [{ need: 1000, pay: 25 }, { need: 2000, pay: 50 }, { need: 5000, pay: 125 }, { need: 10000, pay: 250 }, { need: 20000, pay: 500 }];
 
 const money = (value, digits = 2) => Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -196,7 +194,6 @@ export default function Dashboard(props) {
   const totalBusiness = aBusiness + bBusiness;
   const aPercent = totalBusiness ? (aBusiness / totalBusiness) * 100 : 50;
   const balanced = Number(data.business || 0);
-  const nextLevelTier = levelTiers.find(tier => tier.upTo > data.level);
   const salaryRank = member ? Number(member.salaryRank) : 0;
   const salaryClaims = member ? Number(member.salaryClaims) : 0;
   const salaryStartedAt = member ? Number(member.salaryStartedAt) : 0;
@@ -362,8 +359,8 @@ export default function Dashboard(props) {
     </div>
     <div className="db-legbar"><i style={{ width: `${aPercent}%` }}/><em style={{ width: `${100 - aPercent}%` }}/></div>
     <div className="db-kv"><span>Balanced volume</span><b>${money(balanced, 0)}</b></div>
-    <div className="db-kv"><span>ROI-on-ROI unlocked</span><b>Level {data.level} of 15</b></div>
-    <p className="db-fine">Levels and salary require 50:50 matched volume across A and B. Contributor counts may differ; only deposited volume matters.</p>
+    <div className="db-kv"><span>Salary qualification</span><b>{salaryRank ? `Rank ${salaryRank}` : "Building volume"}</b></div>
+    <p className="db-fine">All team deposits count toward salary through 50:50 matched volume across A and B. ROI-on-ROI is separate and comes only from your direct referrals.</p>
   </section>;
 
   // ---------- Views ----------
@@ -383,7 +380,7 @@ export default function Dashboard(props) {
       <article><div className="db-stat-icon blue"><Wallet size={18}/></div><span>Wallet balance</span><strong>${money(data.balance)}</strong><button className="db-mini-btn" disabled={busy || !account} onClick={() => transact("mint")}><Plus size={13}/> Get test mUSDT</button></article>
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active · <b className="up">${money(live.profitPerDay)} profit/day</b></small></article>
       <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} profit + ${money(totalCapitalReleased)} capital · ${money(data.referralEarnings)} from team</small></article>
-      <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>Level {data.level} of 15 unlocked</small></article>
+      <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>{salaryRank ? `Salary rank ${salaryRank}` : "Counts toward salary"}</small></article>
     </section>
 
     <div className="db-grid">
@@ -582,10 +579,9 @@ export default function Dashboard(props) {
     </div>}
     {team.status === "error" && <p className="db-inline-warn"><CircleAlert size={14}/> {team.error} <button onClick={fetchTeam}>Try again</button></p>}
     <div className="db-level-table" role="table" aria-label="Members per level">
-      <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Your ROI-on-ROI</span></div>
+      <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Salary volume</span></div>
       {Array.from({ length: 15 }, (_, index) => {
         const rows = teamLevels[index] || [];
-        const unlocked = index < data.level;
         const isOpen = openLevel === index && rows.length > 0;
         return <React.Fragment key={index}>
           <button role="row" className={`db-level-row ${rows.length ? "has" : "empty"} ${isOpen ? "open" : ""}`} onClick={() => rows.length && setOpenLevel(isOpen ? null : index)} disabled={!rows.length} aria-expanded={isOpen}>
@@ -594,7 +590,7 @@ export default function Dashboard(props) {
             <span>{rows.filter(m => m.side === 0).length}</span>
             <span>{rows.filter(m => m.side === 1).length}</span>
             <span>${money(rows.reduce((sum, m) => sum + m.deposit, 0), 0)}</span>
-            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} {levels[index]}%</span>
+            <span className="on"><CircleCheck size={12}/> Included</span>
           </button>
           {isOpen && <div className="db-level-members">{rows.map(m => <div key={m.address} className="db-level-member">
             <Avatar address={m.address} size={28}/>
@@ -606,7 +602,7 @@ export default function Dashboard(props) {
       })}
     </div>
     {team.data?.truncated && <p className="db-fine">Showing the first {team.data.total.toLocaleString()} members. Larger teams are cut off here to keep the page fast.</p>}
-    <p className="db-fine">Deposits are each member's own package deposits. Levels follow placement: level 1 is your direct members, level 2 is their direct members, and so on. Lock icons show the ROI-on-ROI levels you haven't unlocked yet.</p>
+    <p className="db-fine">Deposits from every placement level contribute to Organization A or B and count toward balanced salary business. ROI-on-ROI is paid only for people who joined directly with your invite.</p>
   </section>;
 
   const teamView = <>
@@ -614,17 +610,9 @@ export default function Dashboard(props) {
     {registered && DirectTeamCard}
     {registered && LevelTeamCard}
     <section className="db-card">
-      <div className="db-card-head"><div><span className="db-eyebrow">ROI-on-ROI</span><h2>Level rewards</h2></div>
-        <span className="db-chip green">{data.level} of 15 unlocked</span></div>
-      <p className="db-muted">Earn a share of the ROI your team claims. Grow balanced volume in both organizations to unlock deeper levels.</p>
-      {nextLevelTier && <div className="db-next">
-        <div><span>Unlock levels {data.level + 1}–{nextLevelTier.upTo}</span><b>${money(balanced, 0)} / ${nextLevelTier.need.toLocaleString()} balanced volume</b></div>
-        <Progress value={(balanced / nextLevelTier.need) * 100} tone="green"/>
-      </div>}
-      <div className="db-levels">{levels.map((rate, index) => {
-        const unlocked = index < data.level;
-        return <div key={index} className={unlocked ? "on" : ""}>{unlocked ? <Unlock size={13}/> : <Lock size={13}/>}<span>L{index + 1}</span><b>{rate}%</b></div>;
-      })}</div>
+      <div className="db-card-head"><div><span className="db-eyebrow">ROI-on-ROI</span><h2>Direct referral reward</h2></div>
+        <span className="db-chip green">10% of profit</span></div>
+      <p className="db-muted">When someone who joined directly with your referral link claims or compounds ROI, you receive 10% of their profit component. Indirect team members do not generate ROI-on-ROI for you.</p>
     </section>
     {member?.registered && <section className="db-card db-sponsor">
       <Avatar address={member.referrer} size={44}/>
@@ -653,7 +641,7 @@ export default function Dashboard(props) {
           <button className={data.rewardMode === 1 ? "active" : ""} disabled={busy || !registered || data.rewardMode === 1} onClick={() => transact("setRewardMode", 1)}><Repeat size={18}/><b>Compound packages</b><span>Choose Starter, Growth, or Elite</span>{data.rewardMode === 1 && <CircleCheck size={16} className="db-mode-check"/>}</button>
         </div>
         <div className="db-kv"><span>Total claimed ROI</span><b>${money(totalClaimed)}</b></div>
-        <div className="db-kv"><span>Team (ROI-on-ROI) earnings</span><b>${money(data.referralEarnings)} <button className="db-link-btn" onClick={() => setSection("income")}>Details <ArrowUpRight size={13}/></button></b></div>
+        <div className="db-kv"><span>Direct ROI-on-ROI earnings</span><b>${money(data.referralEarnings)} <button className="db-link-btn" onClick={() => setSection("income")}>Details <ArrowUpRight size={13}/></button></b></div>
       </section>
       {SalaryCard}
     </div>
@@ -673,7 +661,6 @@ export default function Dashboard(props) {
   const earned7 = sumSince(startOfToday - 6 * DAY);
   const earned30 = sumSince(startOfToday - 29 * DAY);
   const lastPayment = payments[0];
-  const bestLevelIndex = levelIncome.reduce((best, l, i) => l.total > levelIncome[best].total ? i : best, 0);
   const chartDays = Array.from({ length: 14 }, (_, i) => {
     const start = startOfToday - (13 - i) * DAY;
     const amount = payments.filter(p => p.paidAt >= start && p.paidAt < start + DAY).reduce((sum, p) => sum + p.amount, 0);
@@ -689,20 +676,20 @@ export default function Dashboard(props) {
   }, []);
   const historySupported = incomeData ? incomeData.supported : true;
 
-  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>When people in your team claim or compound their profit, you earn a share of it from up to 15 levels deep.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
+  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>Earn 10% of the profit component claimed or compounded by people who join directly with your invite.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
     <section className="db-income-hero">
       <div className="db-income-main">
         <span className="db-label"><Layers size={14}/> Total ROI on ROI earned</span>
         <strong className="db-hero-value">${money(incomeTotal)}</strong>
         <p>{lastPayment
-          ? <>Last paid <b>${money(lastPayment.amount)}</b> from level {lastPayment.level} · {ago(lastPayment.paidAt, now)}</>
-          : incomeTotal > 0 ? "Paid straight to your wallet each time your team claims or compounds." : "You'll earn here when members in your unlocked levels claim or compound their profit."}</p>
+          ? <>Last paid <b>${money(lastPayment.amount)}</b> from {lastPayment.level === 1 ? "a direct referral" : `legacy level ${lastPayment.level}`} · {ago(lastPayment.paidAt, now)}</>
+          : incomeTotal > 0 ? "Paid straight to your wallet when a direct referral claims or compounds." : "You'll earn here when one of your direct referrals claims or compounds profit."}</p>
       </div>
       <div className="db-income-stats">
         <div><span>Today</span><b>${money(earnedToday)}</b></div>
         <div><span>Last 7 days</span><b>${money(earned7)}</b></div>
         <div><span>Last 30 days</span><b>${money(earned30)}</b></div>
-        <div><span>Levels unlocked</span><b>{data.level} <small>of 15</small></b></div>
+        <div><span>Direct rate</span><b>10%</b></div>
       </div>
       <div className="db-hero-glow"/>
     </section>
@@ -722,33 +709,31 @@ export default function Dashboard(props) {
             <span>{new Date(d.start * 1000).toLocaleDateString("en-US", { day: "numeric" })}</span>
           </div>)}
         </div>
-        <p className="db-fine">{chartMax ? "Tap or hover a bar to see that day's amount. Payments only happen when your team claims or compounds, which is usually Monday to Friday." : "No ROI on ROI in the last 14 days yet."}</p>
+        <p className="db-fine">{chartMax ? "Tap or hover a bar to see that day's amount. Payments happen when a direct referral claims or compounds." : "No ROI on ROI in the last 14 days yet."}</p>
       </section>
 
       <section className="db-card">
         <div className="db-card-head"><div><span className="db-eyebrow">How it works</span><h2>Where it comes from</h2></div></div>
-        <div className="db-kv"><span>Your best level</span><b>{levelIncome[bestLevelIndex].total > 0 ? `Level ${bestLevelIndex + 1} · $${money(levelIncome[bestLevelIndex].total)}` : "–"}</b></div>
+        <div className="db-kv"><span>Direct referral earnings</span><b>${money(levelIncome[0].total)}</b></div>
         <div className="db-kv"><span>Payments received</span><b>{(incomeData?.count || 0).toLocaleString()}</b></div>
-        <div className="db-kv"><span>Levels that paid you</span><b>{levelIncome.filter(l => l.payments > 0).length} of 15</b></div>
+        <div className="db-kv"><span>Reward source</span><b>Direct referrals only</b></div>
         {untracked > 0.000001 && <div className="db-kv"><span>Earned before history tracking</span><b>${money(untracked)}</b></div>}
-        <p className="db-muted">Each time a member in your team claims or compounds, you get a percentage of the <b>profit half</b> of that ROI from their level. You only earn from levels you've unlocked at that moment.</p>
-        {nextLevelTier && <button className="db-link-btn" onClick={() => setSection("team")}>Unlock levels {data.level + 1}–{nextLevelTier.upTo} at ${nextLevelTier.need.toLocaleString()} balanced volume <ArrowUpRight size={13}/></button>}
+        <p className="db-muted">Each time a direct referral claims or compounds, you get <b>10% of the profit component</b> of that ROI. Their returned capital is not commissionable. Team volume is used separately for salary.</p>
       </section>
     </div>
 
     <section className="db-card">
       <div className="db-card-head">
-        <div><span className="db-eyebrow">Which level</span><h2>Earnings by level</h2></div>
+        <div><span className="db-eyebrow">Source</span><h2>Direct referral earnings</h2></div>
         <button className="db-link-btn" onClick={fetchIncome} disabled={income.status === "loading"}>{income.status === "loading" ? <><Loader2 size={14} className="db-spin"/> Loading</> : <><RefreshCw size={14}/> Refresh</>}</button>
       </div>
       <div className="db-income-table" role="table" aria-label="ROI on ROI earnings per level">
-        <div className="db-income-row head" role="row"><span>Level</span><span>Rate</span><span>Earned</span><span>Payments</span><span>Last paid</span></div>
+        <div className="db-income-row head" role="row"><span>Source</span><span>Rate</span><span>Earned</span><span>Payments</span><span>Last paid</span></div>
         {levelIncome.map((l, index) => {
-          const unlocked = index < data.level;
           const share = trackedTotal ? l.total / trackedTotal * 100 : 0;
           const active = incomeLevel === index + 1;
           return <button key={index} role="row" className={`db-income-row ${l.payments ? "has" : "empty"} ${active ? "active" : ""}`} disabled={!l.payments} onClick={() => { setIncomeLevel(active ? 0 : index + 1); setIncomeShown(30); }} title={l.payments ? "Show this level's payments" : ""}>
-            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} L{index + 1}</span>
+            <span className={index === 0 ? "on" : "off"}>{index === 0 ? <CircleCheck size={12}/> : <Lock size={12}/>} {index === 0 ? "Direct" : `Legacy L${index + 1}`}</span>
             <span>{levels[index]}%</span>
             <span className="db-income-earned"><b>{incomeLoading ? "…" : `$${money(l.total)}`}</b>{share > 0 && <i style={{ width: `${share}%` }}/>}</span>
             <span>{l.payments || "–"}</span>
@@ -757,7 +742,7 @@ export default function Dashboard(props) {
         })}
         <div className="db-income-row total" role="row"><span>Total</span><span/><span><b>${money(trackedTotal)}</b></span><span>{levelIncome.reduce((sum, l) => sum + l.payments, 0)}</span><span/></div>
       </div>
-      <p className="db-fine">Rates are a share of the profit half of your team's ROI. Lock icons are levels you haven't unlocked yet. Tap a level to see only its payments.</p>
+      <p className="db-fine">New rewards are paid only at the 10% direct-referral rate. Legacy level rows remain visible only for payments recorded before this rule changed.</p>
     </section>
 
     <section className="db-card">
@@ -772,7 +757,7 @@ export default function Dashboard(props) {
       {incomeLoading ? <div className="db-direct-list">{[0, 1, 2].map(i => <div key={i} className="db-direct-row skeleton"/>)}</div>
         : !filteredPayments.length ? <div className="db-direct-empty">
             <span className="db-slot-empty"><Layers size={18}/></span>
-            <div><b>{incomeLevel ? `No payments from level ${incomeLevel} yet` : incomeTotal > 0 ? "Payment details couldn't be loaded" : "No ROI on ROI payments yet"}</b><small>{!incomeLevel && incomeTotal > 0 ? `Your $${money(incomeTotal)} total is correct; the list of individual payments will appear after a refresh.` : "Payments appear here as soon as someone in your unlocked levels claims or compounds."}</small></div>
+            <div><b>{incomeLevel ? `No payments from this source yet` : incomeTotal > 0 ? "Payment details couldn't be loaded" : "No ROI on ROI payments yet"}</b><small>{!incomeLevel && incomeTotal > 0 ? `Your $${money(incomeTotal)} total is correct; the list of individual payments will appear after a refresh.` : "Payments appear when a direct referral claims or compounds."}</small></div>
             {incomeLevel > 0 && <button className="db-btn glass small" onClick={() => setIncomeLevel(0)}>Show all levels</button>}
           </div>
         : <div className="db-pay-list">

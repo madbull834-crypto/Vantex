@@ -63,7 +63,8 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         address source;
     }
 
-    /// @notice Running ROI-on-ROI totals for one level of a member's team.
+    /// @notice Running ROI-on-ROI totals. New payments are recorded at level 1 only; the remaining
+    ///         slots are retained so upgrades can still expose historical multi-level payments.
     struct LevelEarnings {
         uint128 total;
         uint40 lastPaidAt;
@@ -595,31 +596,32 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function _payReferralRoi(address source, uint256 roi) private {
-        address upline = members[source].referrer;
-        for (uint8 level = 1; level <= MAX_REFERRAL_LEVEL && upline != address(0); ++level) {
-            if (qualifiedLevel(upline) >= level) {
-                uint256 reward = roi * referralRateBps[level - 1] / BPS;
-                // ROI-mode level income is limited to 3x the earner's fresh wallet deposits.
-                // Every later deposit adds another 3x capacity; prior payments never reset.
-                if (rewardMode[upline] == RewardMode.ROI) {
-                    uint256 cap = uint256(members[upline].personalBusiness) * 3;
-                    uint256 paid = referralEarnings[upline];
-                    if (paid >= cap) reward = 0;
-                    else if (reward > cap - paid) reward = cap - paid;
-                }
-                if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
-                    paymentToken.safeTransfer(upline, reward);
-                    referralEarnings[upline] += reward;
-                    _referralPayments[upline].push(ReferralPayment(uint128(reward), uint40(block.timestamp), level, source));
-                    LevelEarnings storage earned = _levelEarnings[upline][level - 1];
-                    earned.total += uint128(reward);
-                    earned.lastPaidAt = uint40(block.timestamp);
-                    earned.payments += 1;
-                    totalRewardsPaid += reward;
-                    emit ReferralPaid(upline, source, level, reward);
-                }
-            }
-            upline = members[upline].referrer;
+        // ROI-on-ROI belongs only to the member whose invite the source used. Placement spillover
+        // must not redirect this reward. Older members created before sponsor tracking use their
+        // placement parent as a backwards-compatible direct sponsor.
+        address sponsor = sponsorOf[source];
+        if (sponsor == address(0)) sponsor = members[source].referrer;
+        if (sponsor == address(0)) return;
+
+        uint256 reward = roi * referralRateBps[0] / BPS;
+        // ROI-mode direct income is limited to 3x the earner's fresh wallet deposits.
+        // Every later deposit adds another 3x capacity; prior payments never reset.
+        if (rewardMode[sponsor] == RewardMode.ROI) {
+            uint256 cap = uint256(members[sponsor].personalBusiness) * 3;
+            uint256 paid = referralEarnings[sponsor];
+            if (paid >= cap) reward = 0;
+            else if (reward > cap - paid) reward = cap - paid;
+        }
+        if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
+            paymentToken.safeTransfer(sponsor, reward);
+            referralEarnings[sponsor] += reward;
+            _referralPayments[sponsor].push(ReferralPayment(uint128(reward), uint40(block.timestamp), 1, source));
+            LevelEarnings storage earned = _levelEarnings[sponsor][0];
+            earned.total += uint128(reward);
+            earned.lastPaidAt = uint40(block.timestamp);
+            earned.payments += 1;
+            totalRewardsPaid += reward;
+            emit ReferralPaid(sponsor, source, 1, reward);
         }
     }
 

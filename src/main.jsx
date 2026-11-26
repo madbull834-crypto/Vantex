@@ -423,7 +423,7 @@ function App() {
     return { supported: true, total, levels, payments, count, truncated: count > ROI_HISTORY_LIMIT, legacyError, loadedAt: Date.now() };
   };
 
-  // Walks the member's placement tree level by level (up to 15 levels, the ROI-on-ROI depth).
+  // Walks the member's placement tree level by level for team-business and salary visibility.
   // Each member records which of the root's organizations (A = 0, B = 1) they sit in.
   const TEAM_LIMIT = 1500;
   const loadTeam = async (root) => {
