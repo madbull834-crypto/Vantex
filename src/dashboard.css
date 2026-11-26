@@ -494,3 +494,25 @@
 .db-cplan ul b{color:var(--text)}
 .db-cplan small{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--c)}
 @media(max-width:860px){.db-cplan-grid{grid-template-columns:1fr}}
+
+/* Calm, simplified visual system */
+.db{--bg:#0b1118;--side:#0d141d;--card:#111a24;--card2:#111a24;--line:#26313d;--line2:#344150;--text:#f4f6f8;--muted:#a8b2bd;--faint:#7f8b98;--gold:#d5ab59;--gold2:#d5ab59;grid-template-columns:220px 1fr;background:var(--bg);font-size:15px}
+.db-sidebar{padding:22px 12px 18px;background:var(--side);border-color:var(--line)}
+.db-brand{padding:0 10px 26px}.db-brand>span{width:34px;height:34px;border-radius:8px;transform:none;background:var(--gold);font-size:20px}.db-brand small{color:var(--muted);letter-spacing:.2em}
+.db-sidebar nav{gap:2px}.db-sidebar nav button{padding:11px 12px;border-radius:8px;color:var(--muted);font-size:14px}.db-sidebar nav button:hover{background:#151f2a}.db-sidebar nav button.active{background:#1a2530;color:var(--text);box-shadow:none}.db-sidebar nav button.active svg{color:var(--gold)}
+.db-side-account{border-radius:8px;background:transparent}.db-main{padding:26px clamp(18px,3vw,42px) 56px;max-width:1440px;width:100%}
+.db-topbar{margin-bottom:20px}.db-kicker{font-size:13px;letter-spacing:.02em;color:var(--muted)}.db-topbar h1{font-size:30px;margin-top:3px}
+.db-icon-btn,.db-wallet{border-radius:8px;background:transparent}.db-menu{border-radius:10px;background:#121c27;box-shadow:0 16px 40px #0006}
+.db-btn{height:42px;border-radius:8px;box-shadow:none!important;transition:background .15s,border-color .15s}.db-btn:hover:not(:disabled){transform:none}.db-btn.gold{background:var(--gold);color:#17130b}.db-btn.dark{background:#edf0f3}.db-btn.glass{background:transparent;border-color:var(--line2)}
+.db-banner,.db-toast{border-radius:10px;background:var(--card);box-shadow:none}.db-banner.gold{background:#181711;color:var(--text);border-color:#5a492a}
+.db-view{gap:14px;animation:none}.db-card{background:var(--card);border-color:var(--line);border-radius:12px;padding:20px}.db-card-head{margin-bottom:16px}.db-card-head h2{font-size:19px}.db-eyebrow{font-size:13px;letter-spacing:.02em;text-transform:none;color:var(--muted)}
+.db-chip{border-radius:6px;background:#1b2530;color:var(--text)}.db-chip.blue,.db-chip.purple,.db-chip.green{background:#1b2530;color:var(--text)}
+.db-grid,.db-grid.even{gap:14px}.db-fine{font-size:13px}.db-muted{font-size:14px}
+.db-hero,.db-income-hero{padding:26px 28px;border-radius:12px;background:#131e29;border:1px solid var(--line);box-shadow:none}.db-hero-glow{display:none}.db-hero-value{font-size:clamp(38px,4vw,50px);background:none;color:var(--text)}.db-label{font-size:14px;color:var(--muted)}
+.db-stats{gap:10px}.db-stats article{padding:18px;border-radius:10px;background:var(--card)}.db-stat-icon{border-radius:7px;margin-bottom:8px}.db-stats span{font-size:14px}.db-stats strong{font-size:24px}.db-stats small{font-size:13px}
+.db-onboard{background:var(--card)}.db-steps{gap:8px}.db-steps>div{border-radius:8px;background:#0e161f}.db-steps .next{background:#181711}
+.db-position,.db-summary,.db-direct-row,.db-pay-row{border-radius:8px;background:#0e161f}.db-amount{border-radius:8px;background:#0b1118}.db-amount button{border-radius:6px}.db-quick button,.db-plan-pick button{border-radius:7px}
+.db-progress,.db-progress i{border-radius:3px}.db-progress i,.db-progress.green i,.db-progress.blue i,.db-progress.purple i{background:var(--gold)}
+.db-income-stats div,.db-plan-overview article,.db-rule-grid div,.db-salary-tiers article{border-radius:8px;background:#0e161f}
+.db .lucide-arrow-up-right,.db .lucide-chevron-right{display:none}
+@media(max-width:1100px){.db{grid-template-columns:190px 1fr}.db-main{padding-left:22px;padding-right:22px}}

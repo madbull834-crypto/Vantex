@@ -86,10 +86,10 @@ const TOKEN_ABI = [
 ];
 
 const plans = [
-  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, earningDays: 200, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "1.00% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, earningDays: 182, days: "≈182 earning days · Mon–Fri", color: "blue", index: 1, copy: "1.10% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, earningDays: 167, days: "≈167 earning days · Mon–Fri", color: "purple", index: 2, copy: "1.20% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, earningDays: 154, days: "≈154 earning days · Mon–Fri", color: "green", index: 3, copy: "1.30% total per earning day until the position reaches its 2× payout cap." }
+  { name: "Package 1", label: "$1 — $100", rate: "0.50%", rateValue: 0.50, min: 1, max: 100, earningDays: 400, days: "400 earning days · Mon–Fri", color: "gold", index: 0, copy: "0.50% ROI per earning day until total ROI reaches 2× the investment." },
+  { name: "Package 2", label: "$101 — $500", rate: "0.55%", rateValue: 0.55, min: 101, max: 500, earningDays: 364, days: "≈364 earning days · Mon–Fri", color: "blue", index: 1, copy: "0.55% ROI per earning day until total ROI reaches 2× the investment." },
+  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", rateValue: 0.60, min: 501, max: 1000, earningDays: 334, days: "≈334 earning days · Mon–Fri", color: "purple", index: 2, copy: "0.60% ROI per earning day until total ROI reaches 2× the investment." },
+  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", rateValue: 0.65, min: 1001, max: 2500, earningDays: 308, days: "≈308 earning days · Mon–Fri", color: "green", index: 3, copy: "0.65% ROI per earning day until total ROI reaches 2× the investment." }
 ];
 
 const compoundPlans = [
@@ -792,9 +792,11 @@ function App() {
   };
 
   const changeAmount = (value) => {
-    setAmount(value);
+    const parsedAmount = Number(value);
+    const normalizedValue = Number.isFinite(parsedAmount) && parsedAmount > 2500 ? "2500" : value;
+    setAmount(normalizedValue);
     if (selectedPlan >= 4) return; // every compound package accepts the full $1-$2,500 range
-    const numericAmount = Number(value);
+    const numericAmount = Number(normalizedValue);
     const matchingPlan = plans.find(plan => numericAmount >= plan.min && numericAmount <= plan.max);
     if (matchingPlan) setSelectedPlan(matchingPlan.index);
   };
