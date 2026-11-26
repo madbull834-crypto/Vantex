@@ -57,12 +57,9 @@ export default function Home({
   const compoundSelected = selectedPlan >= 4;
   const plan = (compoundSelected ? compoundPlans : plans).find(item => item.index === selectedPlan) || plans[0];
   const numericAmount = Number(amount) || 0;
-  // ROI packages pay profit only; compound plans unlock principal separately at maturity.
-  const dailyProfit = numericAmount * plan.rateValue / 100;
-  const dailyPayout = dailyProfit;
-  const earningDays = compoundSelected ? plan.earningDays : dailyPayout > 0 ? projected / dailyPayout : 0;
-  const earningDaysLabel = Number.isInteger(earningDays) ? earningDays.toFixed(0) : earningDays.toFixed(2);
-  const profit = compoundSelected ? Math.max(0, projected - numericAmount) : projected;
+  // ROI packages: each daily payout is half profit, half returned capital. Compound plans pay profit only.
+  const dailyProfit = numericAmount * plan.rateValue / (compoundSelected ? 100 : 200);
+  const profit = Math.max(0, projected - numericAmount);
   const primaryAction = registered ? startInvesting : openRegistration;
   const primaryLabel = registered ? "Create a position" : "Join in one minute";
   const go = (id) => { setMenuOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); };
@@ -181,9 +178,10 @@ export default function Home({
           <div className="hp-calc-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={numericAmount === value ? "active" : ""} onClick={() => changeAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
           <div className="hp-calc-rows">
             <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(dailyProfit)}</b></div>
-            <div><span>Earning days <small>{compoundSelected ? "fixed term" : "to reach 2×"}</small></span><b>≈{earningDaysLabel}</b></div>
-            <div><span>{compoundSelected ? "Profit over the term" : "Total ROI"}</span><b className="up">+${money(profit)}</b></div>
-            {compoundSelected && <div className="total"><span>Value at maturity <small>incl. your principal</small></span><b>${money(projected)}</b></div>}
+            {!compoundSelected && <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(dailyProfit)}</b></div>}
+            <div><span>Earning days</span><b>≈{plan.earningDays}</b></div>
+            <div><span>Profit over the term</span><b className="up">+${money(profit)}</b></div>
+            <div className="total"><span>Total paid back <small>incl. your capital</small></span><b>${money(projected)}</b></div>
           </div>
           <button className="hp-btn gold full" onClick={primaryAction}>{registered ? `Start ${plan.name}` : "Join & start"} <ArrowRight size={16}/></button>
           <p className="hp-calc-note">An estimate from the contract terms, not a guarantee.</p>
@@ -200,14 +198,14 @@ export default function Home({
       </section>
 
       <section id="packages" className="hp-section hp-wrap">
-        <div className="hp-head"><div><span className="hp-eyebrow">ROI plans</span><h2>Choose by investment amount</h2></div><p>Your amount selects the matching plan automatically. Each ROI position stops after a total payout of 2× the amount invested.</p></div>
+        <div className="hp-head"><div><span className="hp-eyebrow">ROI plans</span><h2>Choose by investment amount</h2></div><p>Your amount selects the matching plan automatically. Each day pays profit plus an equal amount of returned capital, and every position stops at a 2× total payout.</p></div>
         <div className="hp-plans">{plans.map(item => <article key={item.name} className={`hp-plan ${item.color} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => selectPlan(item.index)}>
           <div className="hp-plan-top"><span>{item.name}</span></div>
           <h3>{item.rate}<small>/ day profit</small></h3>
           <p className="hp-plan-range">{item.label}</p>
           <ul>
-            <li><ShieldCheck size={14}/>{item.rate} ROI per earning day</li>
-            <li><Coins size={14}/>ROI stops at 2× the investment</li>
+            <li><ShieldCheck size={14}/>+ {item.rate} capital released daily</li>
+            <li><Coins size={14}/>{item.totalRate} total paid per earning day</li>
             <li><CalendarDays size={14}/>{item.days}</li>
           </ul>
           <button className="hp-btn outline full" onClick={event => { event.stopPropagation(); selectPlan(item.index); primaryAction(); }}>{registered ? "Start this package" : "Join & choose"} <ArrowRight size={15}/></button>

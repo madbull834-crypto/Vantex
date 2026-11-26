@@ -12,8 +12,8 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 /**
  * @title VantexCapital
  * @notice Stablecoin investment and referral accounting based on the supplied Vantex plan.
- * @dev Rates use basis points (100 = 1%). ROI packages pay profit only and stop after ROI reaches
- *      2x the deposited principal. Compound packages pay continuously accrued profit at 0.60%/0.65%/0.70% for
+ * @dev Rates use basis points (100 = 1%). ROI packages release equal daily profit and capital and
+ *      stop at 2x. Compound packages pay continuously accrued profit at 0.60%/0.65%/0.70% for
  *      90/150/200 earning days; profit is claimable anytime and principal unlocks at maturity.
  *      Earnings accrue Monday through Friday in UTC. This is a pooled-reward contract:
  *      the owner must keep it solvent and no return is guaranteed by the code.
@@ -364,7 +364,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function _profitBetween(Position storage position, uint256 from, uint256 to) private view returns (uint256) {
-        if (position.plan < Plan.Starter) return to - from;
+        if (position.plan < Plan.Starter) return to / 2 - from / 2;
         uint256 termProfit = uint256(position.principal) * position.dailyRateBps
             * (_businessSecondsUntil(position.endsAt) - _businessSecondsUntil(position.startedAt)) / DAY / BPS;
         uint256 a = from < termProfit ? from : termProfit;
@@ -405,10 +405,10 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function planTerms(uint256 amount, Plan plan) public view returns (uint16 rate, uint32 earningDuration) {
-        if (plan == Plan.Package1 && amount >= unit && amount <= 100 * unit) rate = 50;
-        else if (plan == Plan.Package2 && amount >= 101 * unit && amount <= 500 * unit) rate = 55;
-        else if (plan == Plan.Package3 && amount >= 501 * unit && amount <= 1_000 * unit) rate = 60;
-        else if (plan == Plan.Package4 && amount >= 1_001 * unit && amount <= 2_500 * unit) rate = 65;
+        if (plan == Plan.Package1 && amount >= unit && amount <= 100 * unit) rate = 100;
+        else if (plan == Plan.Package2 && amount >= 101 * unit && amount <= 500 * unit) rate = 110;
+        else if (plan == Plan.Package3 && amount >= 501 * unit && amount <= 1_000 * unit) rate = 120;
+        else if (plan == Plan.Package4 && amount >= 1_001 * unit && amount <= 2_500 * unit) rate = 130;
         else revert InvalidAmount();
         earningDuration = _packageDuration(rate);
     }

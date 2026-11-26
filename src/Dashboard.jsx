@@ -142,12 +142,12 @@ export default function Dashboard(props) {
     const rate = Number(position.dailyRateBps) / 100;
     const plan = Number(position.plan);
     const compound = isCompoundPlan(plan);
-    // ROI packages pay profit only until 2x. Compound plans unlock principal at the end.
-    const profitRate = rate;
+    // Packages: half profit, half capital each day until 2x. Compounding plans: all profit, principal back at the end.
+    const profitRate = compound ? rate : rate / 2;
     const profitPerDay = principal * profitRate / 100;
     const targetDays = compound ? Math.round((businessSecondsUntil(endsAt) - businessSecondsUntil(startedAt)) / DAY) : 200 / rate;
-    const totalProfit = compound ? principal * rate / 100 * targetDays : principal * 2;
-    const totalPayout = compound ? principal + totalProfit : totalProfit;
+    const totalProfit = compound ? principal * rate / 100 * targetDays : principal;
+    const totalPayout = principal + totalProfit;
     const onchain = contractDetails ? {
       accruedPayout: Number(ethers.formatUnits(contractDetails.accruedPayout, tokenDecimals)),
       claimablePayout: Number(ethers.formatUnits(contractDetails.claimablePayout, tokenDecimals)),
@@ -168,7 +168,7 @@ export default function Dashboard(props) {
       const accrued = position.principal * position.rate / 100 * earningSeconds / DAY;
       const active = now < position.endsAt;
       const earned = position.compound ? (active ? accrued : position.totalPayout) : Math.min(position.totalPayout, accrued);
-      const profitEarned = position.compound ? Math.min(earned, position.totalProfit) : earned;
+      const profitEarned = position.compound ? Math.min(earned, position.totalProfit) : earned / 2;
       const daysDone = Math.min(position.targetDays, earningSeconds / DAY);
       if (active) { activeCapital += position.principal; perDay += position.principal * position.rate / 100; profitPerDay += position.profitPerDay; perSecond += position.principal * position.rate / 100 / DAY; }
       earnedTotal += earned;
@@ -177,7 +177,7 @@ export default function Dashboard(props) {
     });
     const ticking = isEarningDay(now) && perSecond > 0;
     const pendingLive = Number(data.pending) + (ticking ? perSecond * Math.max(0, now - loadedAt.current) : 0);
-    return { rows, earnedTotal, activeCapital, perDay, profitPerDay, pendingLive, ticking };
+    return { rows, earnedTotal, activeCapital, perDay, profitPerDay, capitalPerDay: perDay - profitPerDay, pendingLive, ticking };
   }, [positions, now, data.pending]);
 
   const totalClaimed = positions.reduce((sum, position) => sum + position.claimed, 0);
@@ -201,8 +201,8 @@ export default function Dashboard(props) {
   const lockedCompound = compoundRows.filter(row => row.active).reduce((sum, row) => sum + row.principal, 0);
   const roiCapacity = roiRows.reduce((sum, row) => sum + row.totalPayout, 0);
   const compoundMaturityValue = compoundRows.reduce((sum, row) => sum + row.totalPayout, 0);
-  const totalProfitEarned = roiEarned + compoundProfitEarned;
-  const compoundPrincipalUnlocked = compoundRows.reduce((sum, row) => sum + Math.max(0, row.earned - row.profitEarned), 0);
+  const totalProfitEarned = roiEarned / 2 + compoundProfitEarned;
+  const totalCapitalReleased = Math.max(0, live.earnedTotal - totalProfitEarned);
   const aBusiness = member ? Number(ethers.formatUnits(member.legABusiness, tokenDecimals)) : 0;
   const bBusiness = member ? Number(ethers.formatUnits(member.legBBusiness, tokenDecimals)) : 0;
   const totalBusiness = aBusiness + bBusiness;
@@ -261,7 +261,7 @@ export default function Dashboard(props) {
       <p>{live.perDay > 0
         ? compoundMode
           ? <>Compound profit is claimable anytime; principal remains locked until maturity · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
-          : <>ROI <b>${money(live.profitPerDay)}</b> per earning day · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
+          : <>Profit <b>${money(live.profitPerDay)}</b> per earning day <span className="db-hero-sub">+ ${money(live.capitalPerDay)} capital returned</span> · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
         : registered ? "Create a position to start earning Monday–Friday rewards." : "Join and create a position to start earning."}</p>
     </div>
     <div className="db-hero-actions">
@@ -270,11 +270,6 @@ export default function Dashboard(props) {
     </div>
     <div className="db-hero-glow"/>
   </section>;
-
-  const investmentAmount = Number(amount || 0);
-  const roiDailyPayout = investmentAmount * plan.rateValue / 100;
-  const roiEarningDays = roiDailyPayout > 0 ? projected / roiDailyPayout : 0;
-  const roiEarningDaysLabel = Number.isInteger(roiEarningDays) ? roiEarningDays.toFixed(0) : roiEarningDays.toFixed(2);
 
   const InvestCard = <section className="db-card db-invest" id="new-position">
     <div className="db-card-head"><div><span className="db-eyebrow">Invest</span><h2>New position</h2></div><span className={`db-chip ${planColors[selectedPlan]}`}>{plan.name}</span></div>
@@ -289,9 +284,11 @@ export default function Dashboard(props) {
       <div><span>Total package profit</span><b className="up">+${money(Math.max(0, projected - Number(amount || 0)))}</b></div>
       <div className="total"><span>At maturity <small>principal + full profit</small></span><b>${money(projected)}</b></div>
     </div> : <div className="db-summary">
-      <div><span>ROI per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(Number(amount || 0) * plan.rateValue / 100)}</b></div>
-      <div><span>Earning days <small>to reach 2×</small></span><b>≈{roiEarningDaysLabel} · Mon–Fri</b></div>
-      <div className="total"><span>Maximum ROI <small>2× investment</small></span><b>${money(projected)}</b></div>
+      <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
+      <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
+      <div><span>Term</span><b>{plan.days}</b></div>
+      <div><span>Profit over the term</span><b className="up">+${money(Math.max(0, projected - Number(amount || 0)))}</b></div>
+      <div className="total"><span>Total paid back <small>2× capital</small></span><b>${money(projected)}</b></div>
     </div>}
     {account && member && !registered && <div className="db-mini-pick">
       <span>Your plan</span>
@@ -319,14 +316,14 @@ export default function Dashboard(props) {
         <div><span>Claimable now</span><b className="up">${money(row.claimable, row.claimable < 0.01 ? 4 : 2)}</b><small>Live contract payout</small></div>
         <div><span>Already claimed</span><b>${money(row.claimed)}</b></div>
         <div><span>Profit accrued</span><b className="up">${money(row.onchain?.profitAccrued ?? row.profitEarned)}</b></div>
-        <div><span>{row.compound ? "Principal unlocked" : "ROI remaining"}</span><b>${money(row.compound ? (row.onchain?.capitalReturned ?? Math.max(0, row.earned - row.profitEarned)) : Math.max(0, row.totalPayout - row.earned))}</b></div>
+        <div><span>Capital returned</span><b>${money(row.onchain?.capitalReturned ?? (row.compound ? Math.max(0, row.earned - row.profitEarned) : row.earned / 2))}</b></div>
         <div><span>Payout cap</span><b>${money(row.onchain?.maximumPayout ?? row.totalPayout)}</b></div>
         <div><span>{row.active ? "Days left" : "Ended"}</span><b>{row.active ? row.daysLeft : dateLabel(row.endsAt)}</b></div>
       </div>
       <Progress value={row.progress} tone={planColors[row.plan]}/>
       <small className="db-position-foot">{row.compound
         ? <>Compounding plan · {Math.floor(row.daysDone)} of {row.targetDays} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)} (${money(row.totalProfit)} profit + ${money(row.principal)} capital at the end)</>
-        : <>Started {dateLabel(row.startedAt)} · projected completion {dateLabel(row.endsAt)} · {Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · ROI stops at ${money(row.totalPayout)} (2× investment)</>}</small>
+        : <>Started {dateLabel(row.startedAt)} · projected completion {dateLabel(row.endsAt)} · {Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · 2× cap includes ${money(row.principal)} profit + ${money(row.principal)} returned capital</>}</small>
     </article>)}</div>;
   };
 
@@ -396,7 +393,7 @@ export default function Dashboard(props) {
     <section className="db-stats">
       <article><div className="db-stat-icon blue"><Wallet size={18}/></div><span>Wallet balance</span><strong>${money(data.balance)}</strong><button className="db-mini-btn" disabled={busy || !account} onClick={() => transact("mint")}><Plus size={13}/> Get test mUSDT</button></article>
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active · <b className="up">${money(live.profitPerDay)} profit/day</b></small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} ROI profit{compoundPrincipalUnlocked > 0 ? ` · $${money(compoundPrincipalUnlocked)} compound principal unlocked` : ""} · ${money(data.referralEarnings)} from team</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} profit + ${money(totalCapitalReleased)} capital · ${money(data.referralEarnings)} from team</small></article>
       <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>{salaryRank ? `Salary rank ${salaryRank}` : "Counts toward salary"}</small></article>
     </section>
 
@@ -441,7 +438,7 @@ export default function Dashboard(props) {
 
     <section className="db-stats">
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>ROI capital</span><strong>${money(roiPrincipal)}</strong><small>{roiRows.length} position{roiRows.length === 1 ? "" : "s"}</small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>ROI accrued</span><strong>${money(roiEarned)}</strong><small>Entire payout is ROI profit</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Profit accrued</span><strong>${money(roiEarned / 2)}</strong><small>The other half is returned capital</small></article>
       <article><div className="db-stat-icon blue"><Coins size={18}/></div><span>Remaining to 2×</span><strong>${money(Math.max(0, roiCapacity - roiEarned))}</strong><small>Across every ROI position</small></article>
       <article><div className="db-stat-icon violet"><Layers size={18}/></div><span>Level income received</span><strong>${money(data.referralEarnings)}</strong><small>ROI mode cap: 3× wallet deposits</small></article>
     </section>
@@ -656,8 +653,8 @@ export default function Dashboard(props) {
     {registered && LevelTeamCard}
     <section className="db-card">
       <div className="db-card-head"><div><span className="db-eyebrow">ROI-on-ROI</span><h2>Direct referral reward</h2></div>
-        <span className="db-chip green">10% of ROI</span></div>
-      <p className="db-muted">When someone who joined directly with your referral link claims or compounds ROI, you receive 10% of the full ROI amount. Indirect team members do not generate ROI-on-ROI for you.</p>
+        <span className="db-chip green">10% of profit</span></div>
+      <p className="db-muted">When someone who joined directly with your referral link claims or compounds ROI, you receive 10% of their profit component. Indirect team members do not generate ROI-on-ROI for you.</p>
     </section>
     {member?.registered && <section className="db-card db-sponsor">
       <Avatar address={member.referrer} size={44}/>
@@ -721,7 +718,7 @@ export default function Dashboard(props) {
   }, []);
   const historySupported = incomeData ? incomeData.supported : true;
 
-  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>Earn 10% of the ROI claimed or compounded by people who join directly with your invite.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
+  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>Earn 10% of the profit component claimed or compounded by people who join directly with your invite.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
     <section className="db-income-hero">
       <div className="db-income-main">
         <span className="db-label"><Layers size={14}/> Total ROI on ROI earned</span>
@@ -763,7 +760,7 @@ export default function Dashboard(props) {
         <div className="db-kv"><span>Payments received</span><b>{(incomeData?.count || 0).toLocaleString()}</b></div>
         <div className="db-kv"><span>Reward source</span><b>Direct referrals only</b></div>
         {untracked > 0.000001 && <div className="db-kv"><span>Earned before history tracking</span><b>${money(untracked)}</b></div>}
-        <p className="db-muted">Each time a direct referral claims or compounds, you get <b>10% of the full ROI amount</b>. Team volume is used separately for salary.</p>
+        <p className="db-muted">Each time a direct referral claims or compounds, you get <b>10% of the profit component</b> of that ROI. Their returned capital is not commissionable. Team volume is used separately for salary.</p>
       </section>
     </div>
 
