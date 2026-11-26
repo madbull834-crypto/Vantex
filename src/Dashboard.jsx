@@ -14,6 +14,7 @@ const DAY = 86_400;
 const MIN_CLAIM = 5; // USDT, mirrors MIN_CLAIM_USD in the contract
 const SALARY_CYCLE = 15 * DAY;
 const EXPLORER = "https://testnet.bscscan.com/address/";
+const TX_EXPLORER = "https://testnet.bscscan.com/tx/";
 const planNames = ["Package 1", "Package 2", "Package 3", "Package 4", "Starter", "Growth", "Elite"];
 const planColors = ["gold", "blue", "purple", "green", "blue", "green", "purple"];
 const isCompoundPlan = (plan) => plan >= 4;
@@ -72,7 +73,7 @@ export default function Dashboard(props) {
     setSelectedPlan, amount, setAmount, projected, transact, tokenDecimals,
     registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer, openRegistration, levels = [],
-    refresh, clearNotice, onSwitchAccount, onHome, loadTeam, loadRoiIncome
+    refresh, clearNotice, onSwitchAccount, onHome, loadTeam, loadRoiIncome, loadRoiHistory
   } = props;
 
   const [section, setSection] = useState("overview");
@@ -106,6 +107,19 @@ export default function Dashboard(props) {
     if (section === "income" && data.member?.registered) fetchIncome();
   }, [section, account, data.member?.registered, data.referralEarnings]);
   useEffect(() => { setIncome({ status: "idle", data: null, error: "" }); setIncomeLevel(0); setIncomeShown(30); }, [account]);
+  // Personal ROI investments and claims, reconstructed from the contract event log.
+  const [roiHistory, setRoiHistory] = useState({ status: "idle", data: [], error: "" });
+  const [roiHistoryShown, setRoiHistoryShown] = useState(30);
+  const fetchRoiHistory = async () => {
+    if (!account || !loadRoiHistory) return;
+    setRoiHistory(current => ({ status: "loading", data: current.data, error: "" }));
+    try { setRoiHistory({ status: "ready", data: await loadRoiHistory(account), error: "" }); }
+    catch { setRoiHistory(current => ({ status: "error", data: current.data, error: "Couldn't load your complete ROI history right now." })); }
+  };
+  useEffect(() => {
+    if (section === "roi" && data.member?.registered) fetchRoiHistory();
+  }, [section, account, data.member?.registered]);
+  useEffect(() => { setRoiHistory({ status: "idle", data: [], error: "" }); setRoiHistoryShown(30); }, [account]);
   const loadedAt = useRef(Date.now() / 1000);
   const now = useNow();
   const member = data.member;
@@ -223,7 +237,7 @@ export default function Dashboard(props) {
   const stepsDone = steps.filter(step => step.done).length;
   const nextStep = steps.find(step => !step.done);
 
-  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); if (section === "team") await fetchTeam(); if (section === "income") await fetchIncome(); } finally { setTimeout(() => setRefreshing(false), 400); } };
+  const doRefresh = async () => { setRefreshing(true); try { await refresh?.(); if (section === "team") await fetchTeam(); if (section === "income") await fetchIncome(); if (section === "roi") await fetchRoiHistory(); } finally { setTimeout(() => setRefreshing(false), 400); } };
   const copy = async (text, key) => { try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 1800); } catch {} };
   const shareText = "Join my team on Vantex Capital:";
   const nativeShare = async () => { try { await navigator.share({ title: "Vantex Capital", text: shareText, url: referralLink }); } catch {} };
@@ -434,6 +448,23 @@ export default function Dashboard(props) {
       <section className="db-card"><div className="db-card-head"><div><span className="db-eyebrow">ROI portfolio</span><h2>{roiRows.length} position{roiRows.length === 1 ? "" : "s"}</h2></div><span className="db-chip">2× payout cap</span></div>{renderPositions(undefined, "roi")}</section>
       {(!registered || data.rewardMode === 0) && InvestCard}
     </div>
+    {registered && <section className="db-card">
+      <div className="db-card-head">
+        <div><span className="db-eyebrow">Account activity</span><h2>Complete ROI history</h2></div>
+        <button className="db-link-btn" onClick={fetchRoiHistory} disabled={roiHistory.status === "loading"}>{roiHistory.status === "loading" ? <><Loader2 size={14} className="db-spin"/> Loading</> : <><RefreshCw size={14}/> Refresh</>}</button>
+      </div>
+      {roiHistory.status === "error" && <p className="db-inline-warn"><CircleAlert size={14}/> {roiHistory.error} <button onClick={fetchRoiHistory}>Try again</button></p>}
+      {roiHistory.status === "loading" && !roiHistory.data.length ? <div className="db-pay-list">{[0, 1, 2].map(i => <div key={i} className="db-pay-row skeleton"/>)}</div>
+        : !roiHistory.data.length ? <div className="db-empty"><TrendingUp size={30}/><b>No ROI history yet</b><span>Your investments and reward claims will appear here.</span></div>
+        : <div className="db-pay-list">{roiHistory.data.slice(0, roiHistoryShown).map(item => <div key={item.id} className={`db-pay-row ${item.type}`}>
+          <span className="db-pay-level">{item.type === "invested" ? <Plus size={16}/> : <ArrowDownToLine size={16}/>}</span>
+          <div className="db-pay-from"><b>{item.type === "invested" ? `${planNames[item.plan] || "Package"} position created` : "Rewards claimed to wallet"}</b><small>{dateLabel(item.timestamp)} at {timeLabel(item.timestamp)}{item.type === "invested" ? ` · Position #${item.positionId + 1} · ${item.rate.toFixed(2)}%/day` : ""}</small></div>
+          <b className="db-pay-amount">{item.type === "invested" ? "−" : "+"}${money(item.amount)}</b>
+          <a href={TX_EXPLORER + item.transactionHash} target="_blank" rel="noreferrer" aria-label="View transaction on BscScan"><ExternalLink size={14}/></a>
+        </div>)}</div>}
+      {roiHistory.data.length > roiHistoryShown && <button className="db-btn glass full" onClick={() => setRoiHistoryShown(current => current + 30)}>Load more ({(roiHistory.data.length - roiHistoryShown).toLocaleString()} remaining)</button>}
+      {roiHistory.data.length > 0 && <p className="db-fine">Showing {Math.min(roiHistoryShown, roiHistory.data.length).toLocaleString()} of {roiHistory.data.length.toLocaleString()} on-chain ROI activities.</p>}
+    </section>}
     <section className="db-card db-rules"><div className="db-card-head"><div><span className="db-eyebrow">ROI rules</span><h2>Income limits and timing</h2></div></div><div className="db-rule-grid">
       <div><b>2× personal payout</b><span>Each ROI position stops after paying twice its deposited principal.</span></div>
       <div><b>$5 minimum claim</b><span>Wallet ROI claims become available after at least $5 has accrued.</span></div>
@@ -579,9 +610,10 @@ export default function Dashboard(props) {
     </div>}
     {team.status === "error" && <p className="db-inline-warn"><CircleAlert size={14}/> {team.error} <button onClick={fetchTeam}>Try again</button></p>}
     <div className="db-level-table" role="table" aria-label="Members per level">
-      <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Salary volume</span></div>
+      <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Level status</span></div>
       {Array.from({ length: 15 }, (_, index) => {
         const rows = teamLevels[index] || [];
+        const unlocked = index < data.level;
         const isOpen = openLevel === index && rows.length > 0;
         return <React.Fragment key={index}>
           <button role="row" className={`db-level-row ${rows.length ? "has" : "empty"} ${isOpen ? "open" : ""}`} onClick={() => rows.length && setOpenLevel(isOpen ? null : index)} disabled={!rows.length} aria-expanded={isOpen}>
@@ -590,7 +622,7 @@ export default function Dashboard(props) {
             <span>{rows.filter(m => m.side === 0).length}</span>
             <span>{rows.filter(m => m.side === 1).length}</span>
             <span>${money(rows.reduce((sum, m) => sum + m.deposit, 0), 0)}</span>
-            <span className="on"><CircleCheck size={12}/> Included</span>
+            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} {unlocked ? "Unlocked" : "Locked"}</span>
           </button>
           {isOpen && <div className="db-level-members">{rows.map(m => <div key={m.address} className="db-level-member">
             <Avatar address={m.address} size={28}/>
@@ -602,7 +634,7 @@ export default function Dashboard(props) {
       })}
     </div>
     {team.data?.truncated && <p className="db-fine">Showing the first {team.data.total.toLocaleString()} members. Larger teams are cut off here to keep the page fast.</p>}
-    <p className="db-fine">Deposits from every placement level contribute to Organization A or B and count toward balanced salary business. ROI-on-ROI is paid only for people who joined directly with your invite.</p>
+    <p className="db-fine">Level status is unlocked by balanced 50:50 business across Organizations A and B. All team deposits still count toward salary volume; ROI-on-ROI is paid only for people who joined directly with your invite.</p>
   </section>;
 
   const teamView = <>

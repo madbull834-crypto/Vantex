@@ -452,6 +452,8 @@
 .db-pay-day b{color:#7fe0aa}
 .db-pay-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;align-items:center;padding:11px 14px;border-radius:13px;background:#ffffff05;border:1px solid var(--line)}
 .db-pay-level{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#4fd08a1a;color:#7fe0aa;font:800 13px "Manrope"}
+.db-pay-row.invested .db-pay-level{background:#f2c35a1a;color:var(--gold)}
+.db-pay-row.invested .db-pay-amount{color:var(--gold)}
 .db-pay-from{display:grid;gap:2px;min-width:0}
 .db-pay-from small{font-size:12px;color:var(--muted)}
 .db-pay-row a{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:var(--muted)}

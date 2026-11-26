@@ -36,6 +36,8 @@ const clearAutoConnectParam = () => {
 };
 
 const VANTEX_ABI = [
+  "event Invested(address indexed member,uint256 indexed positionId,uint256 amount,uint8 plan,uint16 dailyRateBps,uint40 endsAt)",
+  "event RoiClaimed(address indexed member,uint256 amount)",
   "error AlreadyRegistered()",
   "error InvalidAmount()",
   "error InvalidReferrer()",
@@ -423,6 +425,46 @@ function App() {
     return { supported: true, total, levels, payments, count, truncated: count > ROI_HISTORY_LIMIT, legacyError, loadedAt: Date.now() };
   };
 
+  // Complete personal ROI activity is reconstructed from the contract's immutable event log.
+  const loadRoiHistory = async (account) => {
+    if (!account || !isConfigured) return [];
+    const logProvider = new ethers.JsonRpcProvider(LOG_RPC, 97, { staticNetwork: true });
+    const iface = new ethers.Interface([
+      "event Invested(address indexed member,uint256 indexed positionId,uint256 amount,uint8 plan,uint16 dailyRateBps,uint40 endsAt)",
+      "event RoiClaimed(address indexed member,uint256 amount)"
+    ]);
+    const latest = await logProvider.getBlockNumber();
+    const ranges = [];
+    for (let block = LEGACY_FROM; block <= latest; block += LOG_SPAN) ranges.push([block, Math.min(latest, block + LOG_SPAN - 1)]);
+    const eventTopics = [iface.getEvent("Invested").topicHash, iface.getEvent("RoiClaimed").topicHash];
+    const topics = [eventTopics, ethers.zeroPadValue(account, 32)];
+    const fetchRange = async ([fromBlock, toBlock]) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { return await logProvider.getLogs({ address: CONTRACT_ADDRESS, topics, fromBlock, toBlock }); }
+        catch { await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1))); }
+      }
+      throw new Error("ROI history log range failed");
+    };
+    const logs = (await mapInChunks(ranges, 10, fetchRange)).flat();
+    const blocks = [...new Set(logs.map(log => log.blockNumber))];
+    const stamps = new Map(await mapInChunks(blocks, 10, async number => [number, (await logProvider.getBlock(number)).timestamp]));
+    return logs.map(log => {
+      const event = iface.parseLog(log);
+      const invested = event.name === "Invested";
+      return {
+        id: `${log.transactionHash}-${log.index}`,
+        type: invested ? "invested" : "claimed",
+        amount: Number(ethers.formatUnits(event.args.amount, TOKEN_DECIMALS)),
+        positionId: invested ? Number(event.args.positionId) : null,
+        plan: invested ? Number(event.args.plan) : null,
+        rate: invested ? Number(event.args.dailyRateBps) / 100 : null,
+        endsAt: invested ? Number(event.args.endsAt) : null,
+        timestamp: Number(stamps.get(log.blockNumber)),
+        transactionHash: log.transactionHash
+      };
+    }).sort((a, b) => b.timestamp - a.timestamp || b.id.localeCompare(a.id));
+  };
+
   // Walks the member's placement tree level by level for team-business and salary visibility.
   // Each member records which of the root's organizations (A = 0, B = 1) they sit in.
   const TEAM_LIMIT = 1500;
@@ -807,7 +849,7 @@ function App() {
     setSelectedPlan: selectPlan, amount, setAmount: changeAmount, projected, transact, referrer,
     setReferrer, leg, setLeg, registrationMode, setRegistrationMode,
     referralLink, copyReferralLink, linkReferrer: inviter.ref,
-    compoundPlans, openRegistration, levels,
+    compoundPlans, openRegistration, levels, loadRoiHistory,
     refresh: () => load(), clearNotice: () => setNotice(""), onSwitchAccount: switchAccount, loadTeam, loadRoiIncome
   }} tokenDecimals={TOKEN_DECIMALS} onHome={openHome}/>{wizard}</>;
 
