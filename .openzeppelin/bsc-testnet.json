@@ -6625,7 +6625,11 @@
             }
           ]
         }
-      }
+      },
+      "allAddresses": [
+        "0x344297CF41E86EA77B01a90DFD66215Fb70E19bC",
+        "0xe1F5DF716ACC296EADe031d52452ca78a36F8580"
+      ]
     },
     "c270e9814da652f74649f02849c102b83f7ba4f434f00bfd87d7b107f538b6a3": {
       "address": "0xF25e9D56A08c63822826B3253c02fD7B68432803",

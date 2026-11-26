@@ -14,7 +14,7 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 ## BSC Testnet contracts
 
 - Vantex UUPS proxy: `0xb69043907a9573850Df09b756aBEE689CB20D931`
-- Current implementation: `0xF25e9D56A08c63822826B3253c02fD7B68432803`
+- Current implementation: `0xe1F5DF716ACC296EADe031d52452ca78a36F8580`
 - Mock USDT: `0x02E9442E94306f59D2408A8414eFdEbB0d29C4C3`
 - Network: BSC Testnet (`97`)
 
