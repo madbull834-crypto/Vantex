@@ -63,8 +63,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
         address source;
     }
 
-    /// @notice Running ROI-on-ROI totals. New payments are recorded at level 1 only; the remaining
-    ///         slots are retained so upgrades can still expose historical multi-level payments.
+    /// @notice Running ROI-on-ROI totals for a referral level.
     struct LevelEarnings {
         uint128 total;
         uint40 lastPaidAt;
@@ -105,7 +104,7 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     mapping(address => uint256) public referralEarnings;
 
     uint16[15] public referralRateBps;
-    /// @notice Additional balanced-business block for each level group: 1-3, 4-7, 8-11, 12-15.
+    /// @notice Additional matched direct-referral business for each group: 1-3, 4-7, 8-11, 12-15.
     ///         Cumulative unlock totals are therefore $100, $400, $1,200 and $2,700.
     uint16[4] public levelBusinessUsd;
     uint32[5] public salaryBusinessUsd;
@@ -473,8 +472,35 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function qualifiedLevel(address account) public view returns (uint8) {
-        Member storage m = members[account];
-        uint256 balanced = _balancedBusiness(m);
+        (,, uint8 level) = roiLevelQualification(account);
+        return level;
+    }
+
+    /// @notice Direct referrals' own deposits by placement organization, and the level they unlock.
+    function roiLevelQualification(address account) public view returns (uint256 organizationA, uint256 organizationB, uint8 level) {
+        address legA = directLeg[account][Leg.A];
+        address legB = directLeg[account][Leg.B];
+        // Members registered before sponsor tracking use their placement parent as their sponsor.
+        if (sponsorOf[legA] == address(0)) organizationA = members[legA].personalBusiness;
+        if (sponsorOf[legB] == address(0)) organizationB = members[legB].personalBusiness;
+
+        address[] storage referrals = _directReferrals[account];
+        for (uint256 i; i < referrals.length; ++i) {
+            address referral = referrals[i];
+            uint256 deposited = members[referral].personalBusiness;
+            if (deposited == 0) continue;
+            // For spillover, find the first placement below the sponsor to identify the branch.
+            address branch = referral;
+            while (branch != address(0) && members[branch].referrer != account) branch = members[branch].referrer;
+            if (branch == address(0)) continue;
+            if (branch == legA) organizationA += deposited;
+            else if (branch == legB) organizationB += deposited;
+        }
+
+        level = _levelForBusiness(_matchedBusiness(organizationA, organizationB));
+    }
+
+    function _levelForBusiness(uint256 balanced) private view returns (uint8) {
         uint256 required = uint256(levelBusinessUsd[0]) * unit;
         if (balanced < required) return 0;
         required += uint256(levelBusinessUsd[1]) * unit;
@@ -596,41 +622,48 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function _payReferralRoi(address source, uint256 roi) private {
-        // ROI-on-ROI belongs only to the member whose invite the source used. Placement spillover
-        // must not redirect this reward. Older members created before sponsor tracking use their
-        // placement parent as a backwards-compatible direct sponsor.
+        if (roi == 0) return;
+        address parent = members[source].referrer;
         address sponsor = sponsorOf[source];
-        if (sponsor == address(0)) sponsor = members[source].referrer;
-        if (sponsor == address(0)) return;
+        if (sponsor == address(0)) sponsor = parent;
+        if (sponsor != address(0)) _payReferralLevel(sponsor, source, 1, roi);
 
-        uint256 reward = roi * referralRateBps[0] / BPS;
-        // ROI-mode direct income is limited to 3x the earner's fresh wallet deposits.
-        // Every later deposit adds another 3x capacity; prior payments never reset.
-        if (rewardMode[sponsor] == RewardMode.ROI) {
-            uint256 cap = uint256(members[sponsor].personalBusiness) * 3;
-            uint256 paid = referralEarnings[sponsor];
-            if (paid >= cap) reward = 0;
-            else if (reward > cap - paid) reward = cap - paid;
-        }
-        if (reward != 0 && paymentToken.balanceOf(address(this)) >= reward) {
-            paymentToken.safeTransfer(sponsor, reward);
-            referralEarnings[sponsor] += reward;
-            _referralPayments[sponsor].push(ReferralPayment(uint128(reward), uint40(block.timestamp), 1, source));
-            LevelEarnings storage earned = _levelEarnings[sponsor][0];
-            earned.total += uint128(reward);
-            earned.lastPaidAt = uint40(block.timestamp);
-            earned.payments += 1;
-            totalRewardsPaid += reward;
-            emit ReferralPaid(sponsor, source, 1, reward);
+        // Indirect levels follow placement depth. A spillover sponsor appears only at Level 1.
+        address upline = members[parent].referrer;
+        for (uint8 level = 2; level <= MAX_REFERRAL_LEVEL && upline != address(0); ++level) {
+            if (upline != sponsor) _payReferralLevel(upline, source, level, roi);
+            upline = members[upline].referrer;
         }
     }
 
+    function _payReferralLevel(address earner, address source, uint8 level, uint256 roi) private {
+        uint256 reward = roi * referralRateBps[level - 1] / BPS;
+        // ROI-mode referral income is limited to 3x the earner's fresh wallet deposits.
+        // Every later deposit adds another 3x capacity; prior payments never reset.
+        if (rewardMode[earner] == RewardMode.ROI) {
+            uint256 cap = uint256(members[earner].personalBusiness) * 3;
+            uint256 paid = referralEarnings[earner];
+            if (paid >= cap) return;
+            if (reward > cap - paid) reward = cap - paid;
+        }
+        if (reward == 0 || paymentToken.balanceOf(address(this)) < reward || qualifiedLevel(earner) < level) return;
+
+        paymentToken.safeTransfer(earner, reward);
+        referralEarnings[earner] += reward;
+        _referralPayments[earner].push(ReferralPayment(uint128(reward), uint40(block.timestamp), level, source));
+        LevelEarnings storage earned = _levelEarnings[earner][level - 1];
+        earned.total += uint128(reward);
+        earned.lastPaidAt = uint40(block.timestamp);
+        earned.payments += 1;
+        totalRewardsPaid += reward;
+        emit ReferralPaid(earner, source, level, reward);
+    }
+
     function _balancedBusiness(Member storage member) private view returns (uint256) {
-        uint256 a = member.legABusiness;
-        uint256 b = member.legBBusiness;
-        // Qualification is 50:50 by volume. Each matched dollar represents one dollar from both
-        // organizations, so $50 + $50 produces $100 of balanced business. The people contributing
-        // on either side may differ; only each organization's total deposit volume matters.
+        return _matchedBusiness(member.legABusiness, member.legBBusiness);
+    }
+
+    function _matchedBusiness(uint256 a, uint256 b) private pure returns (uint256) {
         return (a < b ? a : b) * 2;
     }
 

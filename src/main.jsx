@@ -64,7 +64,7 @@ const VANTEX_ABI = [
   "function roiDetailsOf(address) view returns ((uint256 accruedPayout,uint256 claimedPayout,uint256 claimablePayout,uint256 profitAccrued,uint256 capitalReturned,uint256 maximumPayout,bool active)[])",
   "function compoundTerms(uint256 amount,uint8 plan) view returns (uint16 rate,uint32 earningDuration)",
   "function balancedBusiness(address) view returns (uint256)",
-  "function qualifiedLevel(address) view returns (uint8)",
+  "function roiLevelQualification(address) view returns (uint256 organizationA,uint256 organizationB,uint8 level)",
   "function positionsOf(address) view returns (tuple(uint128 principal,uint128 claimed,uint40 startedAt,uint40 endsAt,uint16 dailyRateBps,uint8 plan)[])",
   "function register(address referrer,uint8 leg,uint8 split)",
   "function registerWithMode(address referrer,uint8 leg,uint8 split,uint8 mode)",
@@ -130,7 +130,7 @@ function App() {
   const [referrer, setReferrer] = useState(LINK_REFERRER);
   const [leg, setLeg] = useState(LINK_LEG);
   const [registrationMode, setRegistrationMode] = useState(0);
-  const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, level: 0, member: null, positions: [], roiDetails: [], directA: ZERO, directB: ZERO });
+  const [data, setData] = useState({ balance: "0", gas: null, pending: "0", business: "0", referralEarnings: "0", rewardMode: 0, roiQualification: null, member: null, positions: [], roiDetails: [], directA: ZERO, directB: ZERO });
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [registrationStage, setRegistrationStage] = useState("idle");
   const [registrationError, setRegistrationError] = useState("");
@@ -203,14 +203,14 @@ function App() {
       const rewardModePromise = reader.rewardMode(activeAccount).catch(() => 0n);
       // Older proxy deployments do not have roiDetailsOf yet, so keep positionsOf as a safe fallback.
       const roiDetailsPromise = reader.roiDetailsOf(activeAccount).catch(() => []);
-      const [member, pending, business, referralTotal, memberRewardMode, level, positions, roiDetails, balance, directA, directB, gas] = await Promise.all([
+      const [member, pending, business, referralTotal, memberRewardMode, roiQualification, positions, roiDetails, balance, directA, directB, gas] = await Promise.all([
         reader.members(activeAccount), reader.pendingRoi(activeAccount), reader.balancedBusiness(activeAccount),
-        referralTotalPromise, rewardModePromise, reader.qualifiedLevel(activeAccount), reader.positionsOf(activeAccount), roiDetailsPromise,
+        referralTotalPromise, rewardModePromise, reader.roiLevelQualification(activeAccount).catch(() => null), reader.positionsOf(activeAccount), roiDetailsPromise,
         token.balanceOf(activeAccount), reader.directLeg(activeAccount, 0), reader.directLeg(activeAccount, 1),
         activeProvider.getBalance(activeAccount).catch(() => null)
       ]);
       if (member.registered) storage.clear();
-      setData({ member, gas, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), rewardMode: Number(memberRewardMode), level: Number(level), positions, roiDetails, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
+      setData({ member, gas, pending: ethers.formatUnits(pending, TOKEN_DECIMALS), business: ethers.formatUnits(business, TOKEN_DECIMALS), referralEarnings: ethers.formatUnits(referralTotal, TOKEN_DECIMALS), rewardMode: Number(memberRewardMode), roiQualification, positions, roiDetails, balance: ethers.formatUnits(balance, TOKEN_DECIMALS), directA, directB });
       if (!member.registered) {
         setPlacementReady(false);
         try {
@@ -496,7 +496,7 @@ function App() {
       directsSource = "sponsor";
       const count = Number(await reader.directReferralCount(root));
       const addresses = [];
-      for (let offset = 0; offset < Math.min(count, TEAM_LIMIT); offset += 200) addresses.push(...await reader.directReferralsOf(root, offset, 200));
+      for (let offset = 0; offset < count; offset += 200) addresses.push(...await reader.directReferralsOf(root, offset, 200));
       // Members who joined before the upgrade have no sponsor record: their placement parent counts as sponsor.
       const legacy = await mapInChunks(levels[0] || [], 40, async member => (await reader.sponsorOf(member.address)) === ZERO ? member.address : null);
       const all = [...legacy.filter(Boolean), ...addresses];

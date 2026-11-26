@@ -5,7 +5,7 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 ## Included rules
 
 - Four amount-bound packages: $1–$100 at 0.50%, $101–$500 at 0.55%, $501–$1,000 at 0.60%, and $1,001–$2,500 at 0.65% profit per earning day. ROI accrues Monday–Friday in UTC, with matching capital release for combined daily rates of 1.00%–1.30%. Every position stops at exactly 2× principal, so the packages finish in approximately 200, 182, 167, and 154 earning days respectively.
-- ROI-on-ROI commissions pay 10% of the profit component claimed by a member's direct referral only. Placement spillover still credits the inviting sponsor; indirect team members do not generate ROI-on-ROI.
+- ROI-on-ROI commissions apply to the profit component of a claim. Direct referrals pay 10% to their inviting sponsor at Level 1, including spillover referrals. Indirect commissions follow placement depth and use the rates for Levels 2–15. Each level must be unlocked when the claim is submitted. ROI-mode referral earnings share the existing 3× deposit cap.
 - Registration supports `ROI` mode for claimable rewards or `Auto Compound` mode. The permissionless automation entry point processes an opted-in member at most once per Monday–Friday UTC day; an external keeper must submit that daily transaction.
 - Team deposits continue to propagate through the binary A/B organization for salary qualification.
 - Binary A/B registration with selectable 60/40 or 40/60 volume normalization.
@@ -14,7 +14,7 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 ## BSC Testnet contracts
 
 - Vantex UUPS proxy: `0x57faC61E0c6281C8a3fF6Ca47162739c29161078`
-- Current implementation: `0xe27c6d62a78F08101fC9F8877d2731F676e7D068`
+- Current implementation: `0x344297CF41E86EA77B01a90DFD66215Fb70E19bC`
 - Mock USDT: `0x02E9442E94306f59D2408A8414eFdEbB0d29C4C3`
 - Network: BSC Testnet (`97`)
 

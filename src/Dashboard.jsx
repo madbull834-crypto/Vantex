@@ -537,14 +537,20 @@ export default function Dashboard(props) {
     </section>
   </>;
 
-  const teamLevels = team.data?.levels || [];
-  const teamMembers = teamLevels.flat();
+  const placementLevels = team.data?.levels || [];
+  const directs = team.data?.directs || [];
+  const directAddresses = new Set(directs.map(member => member.address.toLowerCase()));
+  const teamLevels = [directs, ...placementLevels.slice(1).map(level =>
+    level.filter(member => !directAddresses.has(member.address.toLowerCase()))
+  )];
+  const teamMembers = [...(placementLevels[0] || []).filter(member =>
+    !directAddresses.has(member.address.toLowerCase())
+  ), ...teamLevels.flat()];
   const sideCount = (side) => teamMembers.filter(m => m.side === side).length;
   const teamDeposits = teamMembers.reduce((sum, m) => sum + m.deposit, 0);
-  const deepestLevel = teamLevels.length;
+  const deepestLevel = teamLevels.reduce((deepest, level, index) => level.length ? index + 1 : deepest, 0);
   const teamLoading = team.status === "loading" && !team.data;
 
-  const directs = team.data?.directs || [];
   const directsBySponsor = team.data?.directsSource === "sponsor";
   const [directFilter, directQuery] = [team.directFilter || "all", (team.directQuery || "").trim().toLowerCase()];
   const shownDirects = directs.filter(d => (directFilter === "all" || (directFilter === "active" ? d.deposit > 0 : d.deposit <= 0))
@@ -597,9 +603,10 @@ export default function Dashboard(props) {
         </div>}
   </section>;
 
+  const roiQualification = data.roiQualification;
   const LevelTeamCard = <section className="db-card db-team-levels">
     <div className="db-card-head">
-      <div><span className="db-eyebrow">Team by level</span><h2>{team.data ? `${team.data.total}${team.data.truncated ? "+" : ""} member${team.data.total === 1 ? "" : "s"} in your team` : "Your team"}</h2></div>
+      <div><span className="db-eyebrow">Team by level</span><h2>{team.data ? `${teamMembers.length}${team.data.truncated ? "+" : ""} member${teamMembers.length === 1 ? "" : "s"} in your team` : "Your team"}</h2></div>
       <button className="db-link-btn" onClick={fetchTeam} disabled={team.status === "loading"}>{team.status === "loading" ? <><Loader2 size={14} className="db-spin"/> Loading</> : <><RefreshCw size={14}/> Refresh</>}</button>
     </div>
     {team.data && <div className="db-team-summary">
@@ -613,7 +620,7 @@ export default function Dashboard(props) {
       <div className="db-level-row head" role="row"><span>Level</span><span>Members</span><span>Org A</span><span>Org B</span><span>Deposits</span><span>Level status</span></div>
       {Array.from({ length: 15 }, (_, index) => {
         const rows = teamLevels[index] || [];
-        const unlocked = index < data.level;
+        const unlocked = roiQualification && index < Number(roiQualification.level);
         const isOpen = openLevel === index && rows.length > 0;
         return <React.Fragment key={index}>
           <button role="row" className={`db-level-row ${rows.length ? "has" : "empty"} ${isOpen ? "open" : ""}`} onClick={() => rows.length && setOpenLevel(isOpen ? null : index)} disabled={!rows.length} aria-expanded={isOpen}>
@@ -622,19 +629,22 @@ export default function Dashboard(props) {
             <span>{rows.filter(m => m.side === 0).length}</span>
             <span>{rows.filter(m => m.side === 1).length}</span>
             <span>${money(rows.reduce((sum, m) => sum + m.deposit, 0), 0)}</span>
-            <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} {unlocked ? "Unlocked" : "Locked"}</span>
+            {roiQualification ? <span className={unlocked ? "on" : "off"}>{unlocked ? <Unlock size={12}/> : <Lock size={12}/>} {unlocked ? "Unlocked" : "Locked"}</span> : <span>–</span>}
           </button>
           {isOpen && <div className="db-level-members">{rows.map(m => <div key={m.address} className="db-level-member">
             <Avatar address={m.address} size={28}/>
-            <div><b title={m.address}>{short(m.address)}</b><small>Org {m.side === 0 ? "A" : "B"} · placed under {m.parent.toLowerCase() === account.toLowerCase() ? "you" : short(m.parent)}</small></div>
+            <div><b title={m.address}>{short(m.address)}</b><small>{placementLabel(m)}</small></div>
             <span className={m.deposit > 0 ? "dep" : "nodep"}>{m.deposit > 0 ? `$${money(m.deposit)}` : "No deposit"}</span>
             <button onClick={() => copy(m.address, m.address)} aria-label="Copy address">{copied === m.address ? <Check size={13}/> : <Copy size={13}/>}</button>
           </div>)}</div>}
         </React.Fragment>;
       })}
     </div>
-    {team.data?.truncated && <p className="db-fine">Showing the first {team.data.total.toLocaleString()} members. Larger teams are cut off here to keep the page fast.</p>}
-    <p className="db-fine">Level status is unlocked by balanced 50:50 business across Organizations A and B. All team deposits still count toward salary volume; ROI-on-ROI is paid only for people who joined directly with your invite.</p>
+    {team.data?.truncated && <p className="db-fine">Showing {teamMembers.length.toLocaleString()} members. Larger teams are cut off here to keep the page fast.</p>}
+    <p className="db-fine">Level 1 shows your direct referrals. The other levels show where indirect team members are placed.</p>
+    <p className="db-fine">ROI-on-ROI levels use 50:50 matched deposits from people who joined with your invite. {roiQualification
+      ? <>Qualifying deposits: ${money(Number(ethers.formatUnits(roiQualification.organizationA, tokenDecimals)))} in A and ${money(Number(ethers.formatUnits(roiQualification.organizationB, tokenDecimals)))} in B.</>
+      : "Direct-referral level status is currently unavailable."}</p>
   </section>;
 
   const teamView = <>

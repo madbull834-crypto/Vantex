@@ -13,14 +13,14 @@ async function main() {
     kind: "uups",
     redeployImplementation: "always"
   });
-  const upgradeTransaction = upgraded.deploymentTransaction();
-  if (upgradeTransaction) await upgradeTransaction.wait();
-  else await upgraded.waitForDeployment();
+  const upgradeTransaction = upgraded.deployTransaction ?? upgraded.deploymentTransaction();
+  if (!upgradeTransaction) throw new Error("The upgrade transaction is unavailable.");
+  await upgradeTransaction.wait();
   const implementation = await upgrades.erc1967.getImplementationAddress(proxyAddress);
   console.log(JSON.stringify({
     proxy: proxyAddress,
     implementation,
-    upgradeTransaction: upgradeTransaction?.hash || null
+    upgradeTransaction: upgradeTransaction.hash
   }, null, 2));
 }
 

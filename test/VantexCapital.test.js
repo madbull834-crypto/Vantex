@@ -278,9 +278,10 @@ describe("VantexCapital", function () {
 
     expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(1000));
     expect((await vantex.members(owner.address)).salaryRank).to.equal(1);
+    expect(await vantex.roiLevelQualification(owner.address)).to.deep.equal([0n, 0n, 0n]);
   });
 
-  it("pays ROI-on-ROI only to the direct sponsor", async function () {
+  it("pays the Level 1 rate to a qualified direct sponsor", async function () {
     const { owner, alice, bob, token, vantex } = await fixture();
     await vantex.invest(usdt(100), 0); // opens $300 of ROI-on-ROI earning capacity
     await vantex.connect(alice).register(owner.address, 0, 0);
@@ -296,7 +297,7 @@ describe("VantexCapital", function () {
     expect(await vantex.referralEarnings(owner.address)).to.be.closeTo(usdt(3.6), 100n);
   });
 
-  it("caps ROI-mode direct income at 3x and adds capacity after a new investment", async function () {
+  it("caps ROI-mode referral income at 3x and adds capacity after a new investment", async function () {
     const { owner, alice, bob, vantex } = await fixture();
     await vantex.invest(usdt(1), 0); // $3 direct-income capacity
     await vantex.connect(alice).register(owner.address, 0, 0);
@@ -314,7 +315,7 @@ describe("VantexCapital", function () {
     expect(await vantex.referralEarnings(owner.address)).to.equal(usdt(6));
   });
 
-  it("retains the legacy 15-rate table for upgrade compatibility", async function () {
+  it("uses the existing 15-level rate table", async function () {
     const { vantex } = await fixture();
     const expected = [1000n, 500n, 400n, 300n, 300n, 300n, 200n, 200n, 100n, 100n, 200n, 200n, 300n, 400n, 500n];
     for (let level = 0; level < expected.length; level += 1) {
@@ -322,17 +323,19 @@ describe("VantexCapital", function () {
     }
   });
 
-  it("unlocks levels with equal leg volume even when the contributor counts differ", async function () {
+  it("unlocks levels with matched direct-referral deposits, including spillover in the correct leg", async function () {
     const { owner, alice, bob, carol, vantex } = await fixture();
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
-    await vantex.connect(carol).register(bob.address, 0, 1);
+    await vantex.connect(carol).registerWithSponsor(owner.address, bob.address, 0, 1, 0);
 
     // One person supplies A's $50; two people collectively supply B's $50.
     await vantex.connect(alice).invest(usdt(50), 0);
     await vantex.connect(bob).invest(usdt(25), 0);
     await vantex.connect(carol).invest(usdt(25), 0);
     expect(await vantex.balancedBusiness(owner.address)).to.equal(usdt(100));
+    expect(await vantex.roiLevelQualification(owner.address)).to.deep.equal([usdt(50), usdt(50), 3n]);
+    expect(await vantex.roiLevelQualification(bob.address)).to.deep.equal([0n, 0n, 0n]);
     expect(await vantex.qualifiedLevel(owner.address)).to.equal(3);
 
     // Levels 4-7 require another $300, making $400 cumulative ($200 per organization).
@@ -400,6 +403,7 @@ describe("VantexCapital", function () {
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
     await vantex.connect(alice).invest(usdt(10), 0);
+    await vantex.connect(bob).invest(usdt(50), 0);
     await vantex.connect(carol).registerWithSponsor(owner.address, alice.address, 0, 0, 0);
     await setNextBlockOnWeekday(1);
     await vantex.connect(carol).invest(usdt(1000), 2);
@@ -463,36 +467,53 @@ describe("VantexCapital", function () {
     expect(await vantex.positionsOf(bob.address)).to.have.length(1);
   });
 
-  it("records direct-only ROI-on-ROI history at level 1", async function () {
-    const { owner, alice, bob, carol, vantex } = await fixture();
+  it("pays and records Level 1 and Level 2 rewards only after they unlock", async function () {
+    const { owner, alice, bob, carol, token, vantex } = await fixture();
+    const [, , , , dave] = await ethers.getSigners();
+    await token.mint(dave.address, usdt(50));
+    await token.connect(dave).approve(await vantex.getAddress(), usdt(50));
     await vantex.invest(usdt(100), 0); // opens $300 of ROI-on-ROI earning capacity
     await vantex.connect(alice).register(owner.address, 0, 0);
     await vantex.connect(bob).register(owner.address, 1, 0);
     await vantex.connect(carol).register(alice.address, 0, 0);
+    await vantex.connect(dave).register(alice.address, 1, 0);
     await setNextBlockOnWeekday(1);
     await vantex.connect(alice).invest(usdt(600), 2);
-    await vantex.connect(bob).invest(usdt(400), 1);
     await vantex.connect(carol).invest(usdt(1000), 2);
+    await time.increase(7 * DAY);
+    await expect(vantex.connect(carol).claimRoi()).not.to.emit(vantex, "ReferralPaid");
+
+    await vantex.connect(bob).invest(usdt(400), 1);
+    await vantex.connect(dave).invest(usdt(50), 0);
     await time.increase(14 * DAY);
 
     await vantex.connect(alice).claimRoi();
-    await vantex.connect(carol).claimRoi();
+    const ownerBefore = await token.balanceOf(owner.address);
+    const aliceBefore = await token.balanceOf(alice.address);
+    const carolBefore = await token.balanceOf(carol.address);
+    await expect(vantex.connect(carol).claimRoi()).to.emit(vantex, "ReferralPaid");
     const paidAt = await time.latest();
+    const claimed = (await token.balanceOf(carol.address)) - carolBefore;
+    const profit = claimed / 2n;
+    expect((await token.balanceOf(owner.address)) - ownerBefore).to.equal(profit * 5n / 100n);
+    expect((await token.balanceOf(alice.address)) - aliceBefore).to.equal(profit * 10n / 100n);
 
-    // Owner earns from direct referral alice, but not from indirect referral carol.
-    expect(await vantex.referralPaymentCount(owner.address)).to.equal(1);
+    expect(await vantex.referralPaymentCount(owner.address)).to.equal(2);
     const history = await vantex.referralPaymentsOf(owner.address, 0, 10);
     expect(history[0].level).to.equal(1);
     expect(history[0].source).to.equal(alice.address);
-    expect(await vantex.referralPaymentsOf(owner.address, 1, 10)).to.have.length(0);
+    expect(history[1].level).to.equal(2);
+    expect(history[1].source).to.equal(carol.address);
+    expect(await vantex.referralPaymentsOf(owner.address, 2, 10)).to.have.length(0);
     expect(await vantex.referralPaymentsOf(owner.address, 9, 10)).to.have.length(0);
 
     const levels = await vantex.referralEarningsByLevel(owner.address);
     expect(levels[0].total).to.equal(history[0].amount);
     expect(levels[0].payments).to.equal(1);
-    expect(levels[1].total).to.equal(0);
+    expect(levels[1].total).to.equal(history[1].amount);
+    expect(levels[1].payments).to.equal(1);
     expect(levels[2].payments).to.equal(0);
-    expect(levels[0].total).to.equal(await vantex.referralEarnings(owner.address));
+    expect(levels[0].total + levels[1].total).to.equal(await vantex.referralEarnings(owner.address));
 
     // Carol's direct sponsor is alice, so alice receives Carol's level-1 reward.
     expect(await vantex.referralPaymentCount(alice.address)).to.equal(1);
