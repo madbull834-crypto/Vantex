@@ -262,3 +262,17 @@
 .reg-next-item.done>span{background:#3aa26a;color:#fff}
 .reg-next-item .spin{animation:reg-spin 1s linear infinite}
 .reg-next-error{display:flex;align-items:center;gap:6px;margin:0;font-size:12px;color:#a8443a;text-align:left}
+
+/* Warm paper, quiet chrome, one amber state rule */
+.reg-overlay{background:rgba(15,15,16,.78)}
+.reg-modal{background:#f7f4ee;color:#1f1b16;border:1px solid rgba(31,27,22,.1);box-shadow:0 16px 48px rgba(0,0,0,.2)}
+.reg-modal h2,.reg-modal h3,.reg-modal b,.reg-modal strong{font-weight:500}
+.reg-kicker,.reg-section-label,.reg-choice-label{color:#7b7266;font-weight:500;letter-spacing:0;text-transform:none}
+.reg-primary,.reg-plan-go{background:#1f1b16;color:#f7f4ee;font-weight:500;border-radius:8px}
+.reg-link button{background:#1f1b16;color:#f7f4ee;font-weight:500}
+.reg-invite,.reg-sponsor-card,.reg-plan-join button,.reg-next-item.gold{background:#fdfbf7;border-color:rgba(31,27,22,.12);box-shadow:none}
+.reg-sponsor-card,.reg-plan-join button{border-left:2px solid #a87924}
+.reg-plan-join button:nth-child(2) .reg-plan-go{background:#1f1b16;color:#f7f4ee}
+.reg-plan-join button:hover:not(:disabled){transform:none;box-shadow:none;border-color:#a87924}
+.reg-badge,.reg-wallet-pick button{border-radius:6px;font-weight:500}
+.reg-step-mark,.reg-journey i,.reg-gas-steps li>span,.reg-next-item>span,.reg-share-head>span{font-weight:500}

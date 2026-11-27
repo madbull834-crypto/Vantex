@@ -111,7 +111,7 @@ describe("VantexCapital", function () {
     expect(await token.allowance(alice.address, await vantex.getAddress())).to.equal(0);
   });
 
-  it("enforces all four brochure package ranges and rates", async function () {
+  it("enforces all four package ranges with doubled ROI and capital-return rates", async function () {
     const { vantex } = await fixture();
     const package1 = await vantex.planTerms(usdt(100), 0);
     expect(package1[0]).to.equal(100);
@@ -135,7 +135,7 @@ describe("VantexCapital", function () {
   it("accrues and claims package ROI", async function () {
     const { owner, token, vantex } = await fixture();
     await setNextBlockOnWeekday(1); // Monday UTC
-    await vantex.invest(usdt(1000), 2); // package 3: 0.60% daily
+    await vantex.invest(usdt(1000), 2); // 0.50% ROI + 0.50% capital daily
     await time.increase(14 * DAY); // Ten Monday-Friday earning days
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(120));
     const before = await token.balanceOf(owner.address);
@@ -181,19 +181,19 @@ describe("VantexCapital", function () {
     const { owner, vantex } = await fixture();
     await setNextBlockOnWeekday(1);
     await vantex.invest(usdt(100), 0);
-    await time.increase(400 * DAY);
+    await time.increase(600 * DAY);
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(200)); // 100 × 1% × 200
     const [position] = await vantex.positionsOf(owner.address);
     expect(position.endsAt - position.startedAt).to.equal(BigInt(280 * DAY));
   });
 
-  it("finishes higher-rate packages sooner while capping payout at exactly 2x", async function () {
+  it("finishes higher packages sooner while capping payout at exactly 2x", async function () {
     const { owner, vantex } = await fixture();
     await setNextBlockOnWeekday(1);
     await vantex.invest(usdt(101), 1);
     const [position] = await vantex.positionsOf(owner.address);
     expect(position.endsAt - position.startedAt).to.be.lessThan(BigInt(280 * DAY));
-    await time.increase(300 * DAY);
+    await time.increase(600 * DAY);
     expect(await vantex.pendingRoi(owner.address)).to.equal(usdt(202));
   });
 
@@ -292,7 +292,7 @@ describe("VantexCapital", function () {
     await time.increase(14 * DAY);
     const before = await token.balanceOf(owner.address);
     await expect(vantex.connect(alice).claimRoi()).to.emit(vantex, "ReferralPaid");
-    // Alice receives $72 total ($36 profit + $36 capital); sponsor gets 10% of profit = $3.60.
+    // Alice receives $72 total ($36 ROI + $36 capital); sponsor gets 10% of ROI = $3.60.
     expect(await token.balanceOf(owner.address)).to.be.closeTo(before + usdt(3.6), 100n);
     expect(await vantex.referralEarnings(owner.address)).to.be.closeTo(usdt(3.6), 100n);
   });
@@ -527,10 +527,10 @@ describe("VantexCapital", function () {
     const { owner, vantex } = await fixture();
     expect(await vantex.MIN_CLAIM_USD()).to.equal(5);
     await setNextBlockOnWeekday(1); // Monday UTC
-    await vantex.invest(usdt(100), 0); // package 1: $1.00 per earning day
-    await time.increase(4 * DAY); // four earning days = $4
+    await vantex.invest(usdt(50), 0); // package 1: $0.25 ROI + $0.25 capital per earning day
+    await time.increase(7 * DAY); // five earning days = $2.50
     await expect(vantex.claimRoi()).to.be.revertedWithCustomError(vantex, "BelowMinimumClaim").withArgs(usdt(5));
-    await time.increase(DAY); // Friday counts too: $5
+    await time.increase(7 * DAY); // ten earning days = $5
     await expect(vantex.claimRoi()).to.emit(vantex, "RoiClaimed");
   });
 

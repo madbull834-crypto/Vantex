@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import {
   ArrowRight, ArrowUpRight, CalendarDays, Check, ChevronDown, CircleAlert, Coins, Copy, Crown, ExternalLink, Fuel, Gift, LayoutDashboard, Link2, Loader2,
-  Menu, MessageCircle, Network, QrCode, Send, Share2, ShieldCheck, Sparkles, TrendingUp, UserPlus, Users, Wallet, X
+  Menu, MessageCircle, Network, QrCode, Send, Share2, ShieldCheck, TrendingUp, UserPlus, Users, Wallet, X
 } from "lucide-react";
 import Avatar from "./Avatar";
 import ReferralQr from "./ReferralQr";
@@ -57,9 +57,12 @@ export default function Home({
   const compoundSelected = selectedPlan >= 4;
   const plan = (compoundSelected ? compoundPlans : plans).find(item => item.index === selectedPlan) || plans[0];
   const numericAmount = Number(amount) || 0;
-  // ROI packages: each daily payout is half profit, half returned capital. Compound plans pay profit only.
-  const dailyProfit = numericAmount * plan.rateValue / (compoundSelected ? 100 : 200);
-  const profit = Math.max(0, projected - numericAmount);
+  const dailyPayout = numericAmount * plan.rateValue / 100;
+  const dailyProfit = compoundSelected ? dailyPayout : dailyPayout / 2;
+  const dailyCapital = compoundSelected ? 0 : dailyPayout / 2;
+  const earningDays = compoundSelected ? plan.earningDays : dailyPayout > 0 ? projected / dailyPayout : 0;
+  const earningDaysLabel = Number.isInteger(earningDays) ? earningDays.toFixed(0) : earningDays.toFixed(2);
+  const profit = compoundSelected ? Math.max(0, projected - numericAmount) : numericAmount;
   const primaryAction = registered ? startInvesting : openRegistration;
   const primaryLabel = registered ? "Create a position" : "Join in one minute";
   const go = (id) => { setMenuOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); };
@@ -160,9 +163,9 @@ export default function Home({
 
       <section className="hp-hero hp-wrap">
         <div className="hp-hero-copy">
-          <span className="hp-eyebrow"><Sparkles size={13}/> BSC Testnet · on-chain rules</span>
-          <h1>Invest simply.<br/><em>Track everything.</em></h1>
-          <p>Choose an amount, review the estimate, and create a position with your wallet. Your investments, rewards, and team stay in one dashboard.</p>
+          <span className="hp-eyebrow">BSC Testnet contract</span>
+          <h1>ROI terms you can inspect on-chain</h1>
+          <p>Choose an amount, see the exact weekday rate and 2× limit, then track every position, claim, and referral payment from one wallet.</p>
           <div className="hp-hero-actions">
             <button className="hp-btn gold large" onClick={primaryAction}>{primaryLabel} <ArrowUpRight size={18}/></button>
             <button className="hp-btn ghost large" onClick={() => go("packages")}>See packages</button>
@@ -177,11 +180,12 @@ export default function Home({
           <input className="hp-range" type="range" min="1" max="2500" step="1" value={Math.min(2500, Math.max(1, numericAmount))} onChange={event => changeAmount(event.target.value)} aria-label="Amount slider"/>
           <div className="hp-calc-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={numericAmount === value ? "active" : ""} onClick={() => changeAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
           <div className="hp-calc-rows">
-            <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(dailyProfit)}</b></div>
-            {!compoundSelected && <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(dailyProfit)}</b></div>}
-            <div><span>Earning days</span><b>≈{plan.earningDays}</b></div>
-            <div><span>Profit over the term</span><b className="up">+${money(profit)}</b></div>
-            <div className="total"><span>Total paid back <small>incl. your capital</small></span><b>${money(projected)}</b></div>
+            <div><span>ROI per day <small>{compoundSelected ? plan.rate : plan.roiRate} · Mon–Fri</small></span><b className="up">${money(dailyProfit)}</b></div>
+            {!compoundSelected && <div><span>Capital per day <small>{plan.capitalRate} · Mon–Fri</small></span><b>${money(dailyCapital)}</b></div>}
+            <div><span>Earning days <small>{compoundSelected ? "fixed term" : "to 2× total payout"}</small></span><b>{earningDaysLabel}</b></div>
+            <div><span>{compoundSelected ? "Term profit" : "Maximum ROI profit"}</span><b className="up">${money(profit)}</b></div>
+            {!compoundSelected && <div className="total"><span>Total payout <small>ROI + returned capital</small></span><b>${money(projected)}</b></div>}
+            {compoundSelected && <div className="total"><span>Value at maturity <small>principal + profit</small></span><b>${money(projected)}</b></div>}
           </div>
           <button className="hp-btn gold full" onClick={primaryAction}>{registered ? `Start ${plan.name}` : "Join & start"} <ArrowRight size={16}/></button>
           <p className="hp-calc-note">An estimate from the contract terms, not a guarantee.</p>
@@ -198,14 +202,14 @@ export default function Home({
       </section>
 
       <section id="packages" className="hp-section hp-wrap">
-        <div className="hp-head"><div><span className="hp-eyebrow">ROI plans</span><h2>Choose by investment amount</h2></div><p>Your amount selects the matching plan automatically. Each day pays profit plus an equal amount of returned capital, and every position stops at a 2× total payout.</p></div>
+        <div className="hp-head"><div><span className="hp-eyebrow">ROI plans</span><h2>The amount sets the rate</h2></div><p>Each package pays its ROI rate plus an equal capital-return rate per earning day. The total payout stops at 2×.</p></div>
         <div className="hp-plans">{plans.map(item => <article key={item.name} className={`hp-plan ${item.color} ${selectedPlan === item.index ? "active" : ""}`} onClick={() => selectPlan(item.index)}>
           <div className="hp-plan-top"><span>{item.name}</span></div>
-          <h3>{item.rate}<small>/ day profit</small></h3>
+          <h3>{item.roiRate}<small>ROI / day</small></h3>
           <p className="hp-plan-range">{item.label}</p>
           <ul>
-            <li><ShieldCheck size={14}/>+ {item.rate} capital released daily</li>
-            <li><Coins size={14}/>{item.totalRate} total paid per earning day</li>
+            <li><ShieldCheck size={14}/>{item.roiRate} ROI + {item.capitalRate} capital / day</li>
+            <li><Coins size={14}/>Total payout: 2× investment</li>
             <li><CalendarDays size={14}/>{item.days}</li>
           </ul>
           <button className="hp-btn outline full" onClick={event => { event.stopPropagation(); selectPlan(item.index); primaryAction(); }}>{registered ? "Start this package" : "Join & choose"} <ArrowRight size={15}/></button>
@@ -232,7 +236,7 @@ export default function Home({
           <div>
             <span className="hp-eyebrow">Network rewards</span>
             <h2>Direct rewards.<br/>Full-team salary.</h2>
-            <p><b>ROI-on-ROI</b> pays 10% of the profit claimed or compounded by your direct referrals only. Deposits from your full A/B organization count as team business toward <b>salary</b> milestones.</p>
+            <p><b>ROI-on-ROI</b> pays 10% on direct referral ROI, with qualified placement uplines through Level 15. Deposits from the full A/B organization count toward <b>salary</b> milestones.</p>
             <div className="hp-split">
               <div className="a"><span>Organization A</span><b>50%</b></div>
               <i>+</i>
@@ -256,7 +260,7 @@ export default function Home({
       </section>
 
       <section id="faq" className="hp-section hp-wrap hp-faq-wrap">
-        <div className="hp-head center"><span className="hp-eyebrow">FAQ</span><h2>Questions, answered</h2></div>
+        <div className="hp-head center"><span className="hp-eyebrow">Help</span><h2>Common questions</h2></div>
         <div className="hp-faq">{faqs.map(([question, answer], index) => <div key={question} className={openFaq === index ? "open" : ""}>
           <button aria-expanded={openFaq === index} onClick={() => setOpenFaq(openFaq === index ? -1 : index)}>{question}<ChevronDown size={18}/></button>
           {openFaq === index && <p>{answer}</p>}
@@ -265,7 +269,7 @@ export default function Home({
 
       <section className="hp-wrap">
         <div className="hp-final">
-          <div><Users size={22}/><h2>{registered ? "Your dashboard is ready." : "Ready to join?"}</h2><p>{registered ? "Track positions, claim rewards and share your referral link." : "Connect your wallet and join in about a minute. No email or password needed."}</p></div>
+          <div><Users size={22}/><h2>{registered ? "Your dashboard is ready" : "Ready to join?"}</h2><p>{registered ? "Track positions, claim rewards and share your referral link." : "Connect your wallet and join in about a minute. No email or password needed."}</p></div>
           <button className="hp-btn gold large" onClick={registered ? openDashboard : openRegistration}>{registered ? "Open dashboard" : "Join now"} <ArrowUpRight size={18}/></button>
         </div>
       </section>

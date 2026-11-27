@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
 
-:root{font-family:"DM Sans",sans-serif;color:#f4f1e8;background:#06101d;font-synthesis:none;-webkit-font-smoothing:antialiased}
+:root{font-family:"DM Sans",sans-serif;color:#efe9de;background:#161513;font-synthesis:none;-webkit-font-smoothing:antialiased}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;min-width:320px;background:#06101d}
+body{margin:0;min-width:320px;background:#161513}
 button,input,select{font:inherit}
 button,a{color:inherit}
 button{cursor:pointer}

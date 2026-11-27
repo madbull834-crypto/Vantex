@@ -86,10 +86,10 @@ const TOKEN_ABI = [
 ];
 
 const plans = [
-  { name: "Package 1", label: "$1 — $100", rate: "0.50%", totalRate: "1.00%", rateValue: 1.00, min: 1, max: 100, earningDays: 200, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "1.00% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 2", label: "$101 — $500", rate: "0.55%", totalRate: "1.10%", rateValue: 1.10, min: 101, max: 500, earningDays: 182, days: "≈182 earning days · Mon–Fri", color: "blue", index: 1, copy: "1.10% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 3", label: "$501 — $1,000", rate: "0.60%", totalRate: "1.20%", rateValue: 1.20, min: 501, max: 1000, earningDays: 167, days: "≈167 earning days · Mon–Fri", color: "purple", index: 2, copy: "1.20% total per earning day until the position reaches its 2× payout cap." },
-  { name: "Package 4", label: "$1,001 — $2,500", rate: "0.65%", totalRate: "1.30%", rateValue: 1.30, min: 1001, max: 2500, earningDays: 154, days: "≈154 earning days · Mon–Fri", color: "green", index: 3, copy: "1.30% total per earning day until the position reaches its 2× payout cap." }
+  { name: "Package 1", label: "$1 — $100", rate: "1.00%", roiRate: "0.50%", capitalRate: "0.50%", rateValue: 1.00, min: 1, max: 100, earningDays: 200, days: "200 earning days · Mon–Fri", color: "gold", index: 0, copy: "0.50% ROI plus 0.50% capital per earning day until the total payout reaches 2×." },
+  { name: "Package 2", label: "$101 — $500", rate: "1.10%", roiRate: "0.55%", capitalRate: "0.55%", rateValue: 1.10, min: 101, max: 500, earningDays: 181.82, days: "≈182 earning days · Mon–Fri", color: "blue", index: 1, copy: "0.55% ROI plus 0.55% capital per earning day until the total payout reaches 2×." },
+  { name: "Package 3", label: "$501 — $1,000", rate: "1.20%", roiRate: "0.60%", capitalRate: "0.60%", rateValue: 1.20, min: 501, max: 1000, earningDays: 166.67, days: "≈167 earning days · Mon–Fri", color: "purple", index: 2, copy: "0.60% ROI plus 0.60% capital per earning day until the total payout reaches 2×." },
+  { name: "Package 4", label: "$1,001 — $2,500", rate: "1.30%", roiRate: "0.65%", capitalRate: "0.65%", rateValue: 1.30, min: 1001, max: 2500, earningDays: 153.85, days: "≈154 earning days · Mon–Fri", color: "green", index: 3, copy: "0.65% ROI plus 0.65% capital per earning day until the total payout reaches 2×." }
 ];
 
 const compoundPlans = [

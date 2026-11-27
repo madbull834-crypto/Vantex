@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Check, ChevronDown, CircleAlert, CircleCheck, ClipboardPaste, Coins, Copy, Download, ExternalLink, Fuel, Gift, Link2, Loader2, MessageCircle, QrCode, RefreshCw, Smartphone, Sparkles, UserPlus, Users, Wallet, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, CircleAlert, CircleCheck, ClipboardPaste, Coins, Copy, Download, ExternalLink, Fuel, Gift, Link2, Loader2, MessageCircle, QrCode, RefreshCw, Smartphone, UserPlus, Users, Wallet, X } from "lucide-react";
 import { ethers } from "ethers";
 import { isMobile, mobileWalletLinks } from "./wallet";
 import AvatarBase from "./Avatar";
@@ -181,7 +181,7 @@ export default function RegistrationWizard({
       </div>
 
       : inFlow ? <div className="reg-flow" aria-live="polite">
-        <span className="reg-kicker"><Sparkles size={12}/> SETTING UP YOUR ACCOUNT</span>
+        <span className="reg-kicker">Setting up your account</span>
         <h2 id="reg-title">{journey[activeIndex].label}</h2>
         <p className="reg-lead">{journey[activeIndex].hint}</p>
         <ol className="reg-journey">{journey.map((step, index) => <li key={step.key} className={index < activeIndex ? "complete" : index === activeIndex ? "active" : ""}>
@@ -208,7 +208,7 @@ export default function RegistrationWizard({
             <span className="reg-kicker"><Gift size={12}/> YOU'RE INVITED</span>
             <h2 id="reg-title">{short(linkReferrer)} invited you to Vantex</h2>
           </> : <>
-            <span className="reg-kicker"><Sparkles size={12}/> ONE-MINUTE SETUP</span>
+            <span className="reg-kicker">Account setup</span>
             <h2 id="reg-title">Join Vantex</h2>
           </>}
         <p className="reg-lead">No email or password. Your wallet is your account.</p>

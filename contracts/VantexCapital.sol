@@ -12,8 +12,9 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/ut
 /**
  * @title VantexCapital
  * @notice Stablecoin investment and referral accounting based on the supplied Vantex plan.
- * @dev Rates use basis points (100 = 1%). ROI packages release equal daily profit and capital and
- *      stop at 2x. Compound packages pay continuously accrued profit at 0.60%/0.65%/0.70% for
+ * @dev Rates use basis points (100 = 1%). ROI packages pay twice their package ROI rate per earning
+ *      day, split evenly between ROI profit and returned capital, until the total payout reaches 2x
+ *      the deposited principal. Compound packages pay continuously accrued profit at 0.60%/0.65%/0.70% for
  *      90/150/200 earning days; profit is claimable anytime and principal unlocks at maturity.
  *      Earnings accrue Monday through Friday in UTC. This is a pooled-reward contract:
  *      the owner must keep it solvent and no return is guaranteed by the code.
@@ -364,7 +365,8 @@ contract VantexCapital is Initializable, OwnableUpgradeable, ReentrancyGuardUpgr
     }
 
     function _profitBetween(Position storage position, uint256 from, uint256 to) private view returns (uint256) {
-        if (position.plan < Plan.Starter) return to / 2 - from / 2;
+        // ROI package payouts are always 50% ROI profit and 50% returned capital.
+        if (position.plan < Plan.Starter) return (to - from) / 2;
         uint256 termProfit = uint256(position.principal) * position.dailyRateBps
             * (_businessSecondsUntil(position.endsAt) - _businessSecondsUntil(position.startedAt)) / DAY / BPS;
         uint256 a = from < termProfit ? from : termProfit;

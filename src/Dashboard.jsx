@@ -6,7 +6,7 @@ import ReferralQr from "./ReferralQr";
 import {
   ArrowDownToLine, ArrowLeft, ArrowUpRight, BadgeDollarSign, BriefcaseBusiness, Check,
   ChevronDown, CircleAlert, CircleCheck, Coins, Copy, Crown, ExternalLink, Gift, LayoutDashboard, Link2,
-  Lock, MessageCircle, Network, Plus, QrCode, RefreshCw, Repeat, Send, Share2, Sparkles, TrendingUp, Unlock,
+  Lock, MessageCircle, Network, Plus, QrCode, RefreshCw, Repeat, Send, Share2, TrendingUp, Unlock,
   ChevronRight, Layers, Loader2, UserPlus, Users, Wallet, X
 } from "lucide-react";
 
@@ -142,12 +142,12 @@ export default function Dashboard(props) {
     const rate = Number(position.dailyRateBps) / 100;
     const plan = Number(position.plan);
     const compound = isCompoundPlan(plan);
-    // Packages: half profit, half capital each day until 2x. Compounding plans: all profit, principal back at the end.
+    // ROI package payouts are split evenly between profit and returned capital.
     const profitRate = compound ? rate : rate / 2;
     const profitPerDay = principal * profitRate / 100;
     const targetDays = compound ? Math.round((businessSecondsUntil(endsAt) - businessSecondsUntil(startedAt)) / DAY) : 200 / rate;
     const totalProfit = compound ? principal * rate / 100 * targetDays : principal;
-    const totalPayout = principal + totalProfit;
+    const totalPayout = compound ? principal + totalProfit : principal * 2;
     const onchain = contractDetails ? {
       accruedPayout: Number(ethers.formatUnits(contractDetails.accruedPayout, tokenDecimals)),
       claimablePayout: Number(ethers.formatUnits(contractDetails.claimablePayout, tokenDecimals)),
@@ -177,7 +177,7 @@ export default function Dashboard(props) {
     });
     const ticking = isEarningDay(now) && perSecond > 0;
     const pendingLive = Number(data.pending) + (ticking ? perSecond * Math.max(0, now - loadedAt.current) : 0);
-    return { rows, earnedTotal, activeCapital, perDay, profitPerDay, capitalPerDay: perDay - profitPerDay, pendingLive, ticking };
+    return { rows, earnedTotal, activeCapital, perDay, profitPerDay, pendingLive, ticking };
   }, [positions, now, data.pending]);
 
   const totalClaimed = positions.reduce((sum, position) => sum + position.claimed, 0);
@@ -201,8 +201,8 @@ export default function Dashboard(props) {
   const lockedCompound = compoundRows.filter(row => row.active).reduce((sum, row) => sum + row.principal, 0);
   const roiCapacity = roiRows.reduce((sum, row) => sum + row.totalPayout, 0);
   const compoundMaturityValue = compoundRows.reduce((sum, row) => sum + row.totalPayout, 0);
-  const totalProfitEarned = roiEarned / 2 + compoundProfitEarned;
-  const totalCapitalReleased = Math.max(0, live.earnedTotal - totalProfitEarned);
+  const totalProfitEarned = roiEarned + compoundProfitEarned;
+  const compoundPrincipalUnlocked = compoundRows.reduce((sum, row) => sum + Math.max(0, row.earned - row.profitEarned), 0);
   const aBusiness = member ? Number(ethers.formatUnits(member.legABusiness, tokenDecimals)) : 0;
   const bBusiness = member ? Number(ethers.formatUnits(member.legBBusiness, tokenDecimals)) : 0;
   const totalBusiness = aBusiness + bBusiness;
@@ -256,12 +256,12 @@ export default function Dashboard(props) {
   // ---------- Reusable blocks ----------
   const ClaimCard = <section className="db-hero">
     <div className="db-hero-main">
-      <span className="db-label"><Sparkles size={14}/> Available to claim</span>
+      <span className="db-label">Available to claim</span>
       <strong className="db-hero-value">${money(live.pendingLive, live.ticking ? 4 : 2)}</strong>
       <p>{live.perDay > 0
         ? compoundMode
           ? <>Compound profit is claimable anytime; principal remains locked until maturity · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
-          : <>Profit <b>${money(live.profitPerDay)}</b> per earning day <span className="db-hero-sub">+ ${money(live.capitalPerDay)} capital returned</span> · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
+          : <>ROI <b>${money(live.profitPerDay)}</b> per earning day · {earningToday ? <span className="db-live"><i/>Accruing now</span> : <span className="db-paused">Weekend · resumes Monday</span>}</>
         : registered ? "Create a position to start earning Monday–Friday rewards." : "Join and create a position to start earning."}</p>
     </div>
     <div className="db-hero-actions">
@@ -271,12 +271,19 @@ export default function Dashboard(props) {
     <div className="db-hero-glow"/>
   </section>;
 
+  const investmentAmount = Number(amount || 0);
+  const totalPerEarningDay = investmentAmount * plan.rateValue / 100;
+  const roiPerEarningDay = totalPerEarningDay / 2;
+  const capitalPerEarningDay = totalPerEarningDay / 2;
+  const roiEarningDays = totalPerEarningDay > 0 ? projected / totalPerEarningDay : 0;
+  const roiEarningDaysLabel = Number.isInteger(roiEarningDays) ? roiEarningDays.toFixed(0) : roiEarningDays.toFixed(2);
+
   const InvestCard = <section className="db-card db-invest" id="new-position">
     <div className="db-card-head"><div><span className="db-eyebrow">Invest</span><h2>New position</h2></div><span className={`db-chip ${planColors[selectedPlan]}`}>{plan.name}</span></div>
     <label className="db-field-label">Amount <span>USDT</span></label>
     <div className="db-amount"><span>$</span><input type="number" min="1" max="2500" inputMode="decimal" value={amount} onChange={event => setAmount(event.target.value)} aria-label="Amount in USDT"/><button onClick={() => setAmount(String(Math.min(2500, Math.floor(Number(data.balance)))))} disabled={Number(data.balance) < 1}>Max</button></div>
     <div className="db-quick">{[100, 500, 1000, 2500].map(value => <button key={value} className={Number(amount) === value ? "active" : ""} onClick={() => setAmount(String(value))}>${value.toLocaleString()}</button>)}</div>
-    <div className="db-plan-pick">{availablePlans.map(item => <button key={item.index} className={`${planColors[item.index]} ${plan.index === item.index ? "active" : ""}`} onClick={() => setSelectedPlan(item.index)}><b>{item.name} · {item.rate}</b><span>{item.days}</span></button>)}</div>
+    <div className="db-plan-pick">{availablePlans.map(item => <button key={item.index} className={`${planColors[item.index]} ${plan.index === item.index ? "active" : ""}`} onClick={() => setSelectedPlan(item.index)}><b>{item.name} · {item.roiRate || item.rate} ROI</b><span>{item.days}</span></button>)}</div>
     {compoundMode ? <div className="db-summary">
       <div><span>Profit per earning day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(Number(amount || 0) * plan.rateValue / 100)}</b></div>
       <div><span>Principal</span><b>${money(Number(amount || 0))} locked</b></div>
@@ -284,11 +291,10 @@ export default function Dashboard(props) {
       <div><span>Total package profit</span><b className="up">+${money(Math.max(0, projected - Number(amount || 0)))}</b></div>
       <div className="total"><span>At maturity <small>principal + full profit</small></span><b>${money(projected)}</b></div>
     </div> : <div className="db-summary">
-      <div><span>Profit per day <small>{plan.rate} · Mon–Fri</small></span><b className="up">${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
-      <div><span>Capital returned per day <small>{plan.rate}</small></span><b>${money(Number(amount || 0) * plan.rateValue / 200)}</b></div>
-      <div><span>Term</span><b>{plan.days}</b></div>
-      <div><span>Profit over the term</span><b className="up">+${money(Math.max(0, projected - Number(amount || 0)))}</b></div>
-      <div className="total"><span>Total paid back <small>2× capital</small></span><b>${money(projected)}</b></div>
+      <div><span>ROI per earning day <small>{plan.roiRate} · Mon–Fri</small></span><b className="up">${money(roiPerEarningDay)}</b></div>
+      <div><span>Capital per earning day <small>{plan.capitalRate} · Mon–Fri</small></span><b>${money(capitalPerEarningDay)}</b></div>
+      <div><span>Earning days <small>to 2× total payout</small></span><b>{roiEarningDaysLabel}</b></div>
+      <div className="total"><span>Total payout <small>ROI + returned capital</small></span><b>${money(projected)}</b></div>
     </div>}
     {account && member && !registered && <div className="db-mini-pick">
       <span>Your plan</span>
@@ -316,14 +322,14 @@ export default function Dashboard(props) {
         <div><span>Claimable now</span><b className="up">${money(row.claimable, row.claimable < 0.01 ? 4 : 2)}</b><small>Live contract payout</small></div>
         <div><span>Already claimed</span><b>${money(row.claimed)}</b></div>
         <div><span>Profit accrued</span><b className="up">${money(row.onchain?.profitAccrued ?? row.profitEarned)}</b></div>
-        <div><span>Capital returned</span><b>${money(row.onchain?.capitalReturned ?? (row.compound ? Math.max(0, row.earned - row.profitEarned) : row.earned / 2))}</b></div>
+        <div><span>{row.compound ? "Principal unlocked" : "Capital returned"}</span><b>${money(row.onchain?.capitalReturned ?? Math.max(0, row.earned - row.profitEarned))}</b></div>
         <div><span>Payout cap</span><b>${money(row.onchain?.maximumPayout ?? row.totalPayout)}</b></div>
         <div><span>{row.active ? "Days left" : "Ended"}</span><b>{row.active ? row.daysLeft : dateLabel(row.endsAt)}</b></div>
       </div>
       <Progress value={row.progress} tone={planColors[row.plan]}/>
       <small className="db-position-foot">{row.compound
         ? <>Compounding plan · {Math.floor(row.daysDone)} of {row.targetDays} earning days · ${money(row.claimed)} claimed of ${money(row.totalPayout)} (${money(row.totalProfit)} profit + ${money(row.principal)} capital at the end)</>
-        : <>Started {dateLabel(row.startedAt)} · projected completion {dateLabel(row.endsAt)} · {Math.floor(row.daysDone)} of ≈{Math.ceil(row.targetDays)} earning days · 2× cap includes ${money(row.principal)} profit + ${money(row.principal)} returned capital</>}</small>
+        : <>Started {dateLabel(row.startedAt)} · projected completion {dateLabel(row.endsAt)} · {Math.floor(row.daysDone)} of {Math.ceil(row.targetDays)} earning days · payout stops at ${money(row.totalPayout)}</>}</small>
     </article>)}</div>;
   };
 
@@ -390,10 +396,12 @@ export default function Dashboard(props) {
 
     {ClaimCard}
 
+    {ReferralCard}
+
     <section className="db-stats">
       <article><div className="db-stat-icon blue"><Wallet size={18}/></div><span>Wallet balance</span><strong>${money(data.balance)}</strong><button className="db-mini-btn" disabled={busy || !account} onClick={() => transact("mint")}><Plus size={13}/> Get test mUSDT</button></article>
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>Active capital</span><strong>${money(live.activeCapital)}</strong><small>{live.rows.filter(row => row.active).length} active · <b className="up">${money(live.profitPerDay)} profit/day</b></small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} profit + ${money(totalCapitalReleased)} capital · ${money(data.referralEarnings)} from team</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Total earned</span><strong>${money(live.earnedTotal)}</strong><small>${money(totalProfitEarned)} ROI{compoundPrincipalUnlocked > 0 ? ` · $${money(compoundPrincipalUnlocked)} principal unlocked` : ""} · ${money(data.referralEarnings)} referral</small></article>
       <article><div className="db-stat-icon violet"><Users size={18}/></div><span>Balanced team volume</span><strong>${money(balanced, 0)}</strong><small>{salaryRank ? `Salary rank ${salaryRank}` : "Counts toward salary"}</small></article>
     </section>
 
@@ -438,7 +446,7 @@ export default function Dashboard(props) {
 
     <section className="db-stats">
       <article><div className="db-stat-icon gold"><BriefcaseBusiness size={18}/></div><span>ROI capital</span><strong>${money(roiPrincipal)}</strong><small>{roiRows.length} position{roiRows.length === 1 ? "" : "s"}</small></article>
-      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>Profit accrued</span><strong>${money(roiEarned / 2)}</strong><small>The other half is returned capital</small></article>
+      <article><div className="db-stat-icon green"><TrendingUp size={18}/></div><span>ROI accrued</span><strong>${money(roiEarned)}</strong><small>Profit only</small></article>
       <article><div className="db-stat-icon blue"><Coins size={18}/></div><span>Remaining to 2×</span><strong>${money(Math.max(0, roiCapacity - roiEarned))}</strong><small>Across every ROI position</small></article>
       <article><div className="db-stat-icon violet"><Layers size={18}/></div><span>Level income received</span><strong>${money(data.referralEarnings)}</strong><small>ROI mode cap: 3× wallet deposits</small></article>
     </section>
@@ -653,8 +661,8 @@ export default function Dashboard(props) {
     {registered && LevelTeamCard}
     <section className="db-card">
       <div className="db-card-head"><div><span className="db-eyebrow">ROI-on-ROI</span><h2>Direct referral reward</h2></div>
-        <span className="db-chip green">10% of profit</span></div>
-      <p className="db-muted">When someone who joined directly with your referral link claims or compounds ROI, you receive 10% of their profit component. Indirect team members do not generate ROI-on-ROI for you.</p>
+        <span className="db-chip green">10% direct rate</span></div>
+      <p className="db-muted">A direct referral claim pays you 10% when Level 1 is unlocked. Qualified placement uplines can earn the configured rates through Level 15.</p>
     </section>
     {member?.registered && <section className="db-card db-sponsor">
       <Avatar address={member.referrer} size={44}/>
@@ -718,13 +726,13 @@ export default function Dashboard(props) {
   }, []);
   const historySupported = incomeData ? incomeData.supported : true;
 
-  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>Earn 10% of the profit component claimed or compounded by people who join directly with your invite.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
+  const income_ = !registered ? <section className="db-card"><div className="db-empty"><Layers size={30}/><b>Join to earn ROI on ROI</b><span>Referral rewards are paid when eligible team members claim ROI.</span><button className="db-btn gold small" onClick={openRegistration}>Join now</button></div></section> : <>
     <section className="db-income-hero">
       <div className="db-income-main">
         <span className="db-label"><Layers size={14}/> Total ROI on ROI earned</span>
         <strong className="db-hero-value">${money(incomeTotal)}</strong>
         <p>{lastPayment
-          ? <>Last paid <b>${money(lastPayment.amount)}</b> from {lastPayment.level === 1 ? "a direct referral" : `legacy level ${lastPayment.level}`} · {ago(lastPayment.paidAt, now)}</>
+          ? <>Last paid <b>${money(lastPayment.amount)}</b> from {lastPayment.level === 1 ? "a direct referral" : `Level ${lastPayment.level}`} · {ago(lastPayment.paidAt, now)}</>
           : incomeTotal > 0 ? "Paid straight to your wallet when a direct referral claims or compounds." : "You'll earn here when one of your direct referrals claims or compounds profit."}</p>
       </div>
       <div className="db-income-stats">
@@ -758,9 +766,9 @@ export default function Dashboard(props) {
         <div className="db-card-head"><div><span className="db-eyebrow">How it works</span><h2>Where it comes from</h2></div></div>
         <div className="db-kv"><span>Direct referral earnings</span><b>${money(levelIncome[0].total)}</b></div>
         <div className="db-kv"><span>Payments received</span><b>{(incomeData?.count || 0).toLocaleString()}</b></div>
-        <div className="db-kv"><span>Reward source</span><b>Direct referrals only</b></div>
+        <div className="db-kv"><span>Reward source</span><b>Unlocked Levels 1–15</b></div>
         {untracked > 0.000001 && <div className="db-kv"><span>Earned before history tracking</span><b>${money(untracked)}</b></div>}
-        <p className="db-muted">Each time a direct referral claims or compounds, you get <b>10% of the profit component</b> of that ROI. Their returned capital is not commissionable. Team volume is used separately for salary.</p>
+        <p className="db-muted">Level 1 pays 10% on direct referral ROI. Placement uplines use the configured Level 2–15 rates when those levels are unlocked.</p>
       </section>
     </div>
 
@@ -775,7 +783,7 @@ export default function Dashboard(props) {
           const share = trackedTotal ? l.total / trackedTotal * 100 : 0;
           const active = incomeLevel === index + 1;
           return <button key={index} role="row" className={`db-income-row ${l.payments ? "has" : "empty"} ${active ? "active" : ""}`} disabled={!l.payments} onClick={() => { setIncomeLevel(active ? 0 : index + 1); setIncomeShown(30); }} title={l.payments ? "Show this level's payments" : ""}>
-            <span className={index === 0 ? "on" : "off"}>{index === 0 ? <CircleCheck size={12}/> : <Lock size={12}/>} {index === 0 ? "Direct" : `Legacy L${index + 1}`}</span>
+            <span className={index < Number(roiQualification?.level || 0) ? "on" : "off"}>{index < Number(roiQualification?.level || 0) ? <CircleCheck size={12}/> : <Lock size={12}/>} {index === 0 ? "Direct · L1" : `Level ${index + 1}`}</span>
             <span>{levels[index]}%</span>
             <span className="db-income-earned"><b>{incomeLoading ? "…" : `$${money(l.total)}`}</b>{share > 0 && <i style={{ width: `${share}%` }}/>}</span>
             <span>{l.payments || "–"}</span>
@@ -784,7 +792,7 @@ export default function Dashboard(props) {
         })}
         <div className="db-income-row total" role="row"><span>Total</span><span/><span><b>${money(trackedTotal)}</b></span><span>{levelIncome.reduce((sum, l) => sum + l.payments, 0)}</span><span/></div>
       </div>
-      <p className="db-fine">New rewards are paid only at the 10% direct-referral rate. Legacy level rows remain visible only for payments recorded before this rule changed.</p>
+      <p className="db-fine">A level pays only when it is unlocked at the time the team member claims ROI.</p>
     </section>
 
     <section className="db-card">
@@ -807,7 +815,7 @@ export default function Dashboard(props) {
               <div className="db-pay-day"><span>{group.heading}</span><b>+${money(group.items.reduce((sum, p) => sum + p.amount, 0))}</b></div>
               {group.items.map(p => <div key={p.id} className="db-pay-row">
                 <span className="db-pay-level">L{p.level}</span>
-                <div className="db-pay-from"><b>From {short(p.source)}</b><small>{timeLabel(p.paidAt)} · {levels[p.level - 1]}% of their profit</small></div>
+                <div className="db-pay-from"><b>From {short(p.source)}</b><small>{timeLabel(p.paidAt)} · {levels[p.level - 1]}% of their ROI</small></div>
                 <a href={EXPLORER + p.source} target="_blank" rel="noreferrer" aria-label="View member on BscScan"><ExternalLink size={13}/></a>
                 <b className="db-pay-amount">+${money(p.amount, p.amount < 0.01 ? 4 : 2)}</b>
               </div>)}

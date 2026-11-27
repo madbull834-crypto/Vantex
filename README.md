@@ -4,8 +4,8 @@ Full-stack EVM implementation of the supplied Vantex Capital brochure: a Solidit
 
 ## Included rules
 
-- Four amount-bound packages: $1–$100 at 0.50%, $101–$500 at 0.55%, $501–$1,000 at 0.60%, and $1,001–$2,500 at 0.65% profit per earning day. ROI accrues Monday–Friday in UTC, with matching capital release for combined daily rates of 1.00%–1.30%. Every position stops at exactly 2× principal, so the packages finish in approximately 200, 182, 167, and 154 earning days respectively.
-- ROI-on-ROI commissions apply to the profit component of a claim. Direct referrals pay 10% to their inviting sponsor at Level 1, including spillover referrals. Indirect commissions follow placement depth and use the rates for Levels 2–15. Each level must be unlocked when the claim is submitted. ROI-mode referral earnings share the existing 3× deposit cap.
+- Four amount-bound ROI packages. Package rates are 0.50%, 0.55%, 0.60%, and 0.65%; each pays the same percentage again as returned capital. Total Monday–Friday payouts are therefore 1.00%, 1.10%, 1.20%, and 1.30% per earning day. Each position stops at exactly 2× the deposited principal, completing in approximately 200, 182, 167, and 154 earning days.
+- ROI-on-ROI commissions apply to claimed ROI. Direct referrals pay 10% to their inviting sponsor at Level 1, including spillover referrals. Indirect commissions follow placement depth and use the rates for Levels 2–15. Each level must be unlocked when the claim is submitted. ROI-mode referral earnings share the existing 3× deposit cap.
 - Registration supports `ROI` mode for claimable rewards or `Auto Compound` mode. The permissionless automation entry point processes an opted-in member at most once per Monday–Friday UTC day; an external keeper must submit that daily transaction.
 - Team deposits continue to propagate through the binary A/B organization for salary qualification.
 - Binary A/B registration with selectable 60/40 or 40/60 volume normalization.
